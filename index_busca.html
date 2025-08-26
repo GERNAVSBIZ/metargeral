@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Monito METAR/SPECI</title>
+    <title>Monitor METAR/SPECI</title>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
         @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap');
@@ -108,7 +108,7 @@
                 <h3>Configurações</h3>
                 <div class="settings-container">
                     <div class="setting">
-                        <label for="aerodromoInput">Código ICAO:</label>
+                        <label for="aerodromoInput">Monitorar ICAO:</label>
                         <input type="text" id="aerodromoInput" value="SBIZ" maxlength="4" style="text-transform: uppercase; width: 80px;">
                         <button id="alterarAerodromo">Alterar</button>
                     </div>
@@ -131,14 +131,19 @@
                 <h3>Relatórios de Dados</h3>
                 <div class="settings-container">
                     <div class="setting">
+                        <label for="reportIcaoInput">Localidade (ICAO):</label>
+                        <input type="text" id="reportIcaoInput" value="SBIZ" maxlength="4" style="text-transform: uppercase; width: 80px;">
+                    </div>
+                    <hr style="border: none; border-top: 1px solid var(--panel-border); grid-column: 1 / -1; margin: -10px 0;">
+                    <div class="setting">
                         <label for="dailyReportDate">Relatório Diário:</label>
                         <input type="date" id="dailyReportDate">
-                        <button id="generateDailyReport">Gerar PDF</button>
+                        <button id="generateDailyReport">Gerar PDF Diário</button>
                     </div>
                     <div class="setting">
                         <label for="monthlyReportDate">Relatório Mensal:</label>
                         <input type="month" id="monthlyReportDate">
-                        <button id="generateMonthlyReport">Gerar PDF</button>
+                        <button id="generateMonthlyReport">Gerar PDF Mensal</button>
                     </div>
                 </div>
                 <p id="reportStatus" style="text-align: center; margin-top: 15px; font-weight: 500; color: var(--text-muted);"></p>
@@ -170,7 +175,6 @@
 
         const CONFIG = {
             localidade: 'SBIZ',
-            // CORREÇÃO: Voltamos a usar a URL do proxy local para evitar problemas de CORS.
             apiUrl: '/api/metar',
             intervaloConsulta: 40000,
             intervaloColetaDB: 300000,
@@ -186,7 +190,8 @@
             generateMonthlyReportBtn: document.getElementById('generateMonthlyReport'),
             dailyReportDateInput: document.getElementById('dailyReportDate'),
             monthlyReportDateInput: document.getElementById('monthlyReportDate'),
-            reportStatus: document.getElementById('reportStatus')
+            reportStatus: document.getElementById('reportStatus'),
+            reportIcaoInput: document.getElementById('reportIcaoInput')
         };
 
         const state = {
@@ -195,7 +200,7 @@
         };
 
         function inicializarDB() {
-            const request = indexedDB.open("MetarDatabase", 3);
+            const request = indexedDB.open("MetarDatabase", 4);
             
             request.onerror = (event) => {
                 console.error("Erro ao abrir o IndexedDB:", event.target.errorCode);
@@ -219,12 +224,12 @@
             };
         }
 
-        async function salvarMetarNoDB(mensagem) {
+        async function salvarMetarNoDB(icao, mensagem) {
             if (!state.db) return;
             const transacao = state.db.transaction(["metar_reports"], "readwrite");
             const objectStore = transacao.objectStore("metar_reports");
             const novoDado = {
-                icao: CONFIG.localidade,
+                icao: icao,
                 mensagem: mensagem.mens.trim(),
                 recebimento: mensagem.recebimento,
                 dataRecebimento: new Date(mensagem.recebimento)
@@ -244,7 +249,7 @@
                 const data = await response.json();
                 if (data.status && data.data && data.data.data) {
                     for (const msg of data.data.data) {
-                        await salvarMetarNoDB(msg);
+                        await salvarMetarNoDB(CONFIG.localidade, msg);
                     }
                 }
             } catch (error) {
@@ -252,12 +257,12 @@
             }
         }
         
-        async function gerarRelatorioPDF(startDate, endDate, reportType) {
+        async function gerarRelatorioPDF(icaoRelatorio, startDate, endDate, reportType) {
             if (!state.db) {
                 alert("O banco de dados não está pronto. Tente novamente em alguns instantes.");
                 return;
             }
-            elements.reportStatus.textContent = `Gerando relatório ${reportType}... Por favor, aguarde.`;
+            elements.reportStatus.textContent = `Gerando relatório para ${icaoRelatorio}...`;
             const transacao = state.db.transaction(["metar_reports"], "readonly");
             const objectStore = transacao.objectStore("metar_reports");
             const index = objectStore.index("dataRecebimento");
@@ -269,9 +274,9 @@
             };
 
             request.onsuccess = () => {
-                const dados = request.result.filter(d => d.icao === CONFIG.localidade).sort((a, b) => a.dataRecebimento - b.dataRecebimento);
+                const dados = request.result.filter(d => d.icao === icaoRelatorio).sort((a, b) => a.dataRecebimento - b.dataRecebimento);
                 if (dados.length === 0) {
-                    alert(`Nenhum dado encontrado para ${CONFIG.localidade} no período selecionado.`);
+                    alert(`Nenhum dado encontrado para ${icaoRelatorio} no período selecionado.`);
                     elements.reportStatus.textContent = "";
                     return;
                 }
@@ -296,14 +301,14 @@
                     });
                 });
                 
-                doc.text(`Relatório de Mensagens METAR/SPECI - ${CONFIG.localidade}`, 14, 15);
+                doc.text(`Relatório de Mensagens METAR/SPECI - ${icaoRelatorio}`, 14, 15);
                 doc.text(`Período: ${startDate.toLocaleDateString('pt-BR')} a ${endDate.toLocaleDateString('pt-BR')}`, 14, 22);
                 doc.autoTable({
                     head: head, body: body, startY: 30, theme: 'grid',
                     headStyles: { fillColor: [15, 23, 42] }, styles: { fontSize: 8 },
                     columnStyles: { 4: { cellWidth: 'auto' } }
                 });
-                doc.save(`Relatorio_${CONFIG.localidade}_${reportType}_${Date.now()}.pdf`);
+                doc.save(`Relatorio_${icaoRelatorio}_${reportType}_${Date.now()}.pdf`);
                 elements.reportStatus.textContent = "";
             };
         }
@@ -313,23 +318,37 @@
         function inicializarApp() {
             inicializarDB();
             
-            elements.generateDailyReportBtn.addEventListener('click', () => {
-                const dateValue = elements.dailyReportDateInput.value;
-                if (!dateValue) return alert("Por favor, selecione uma data para o relatório diário.");
-                const [year, month, day] = dateValue.split('-');
-                const startDate = new Date(year, month - 1, day, 0, 0, 0);
-                const endDate = new Date(year, month - 1, day, 23, 59, 59);
-                gerarRelatorioPDF(startDate, endDate, 'Diario');
-            });
+            const gerarRelatorioHandler = (isDaily) => {
+                const icao = elements.reportIcaoInput.value.trim().toUpperCase();
+                if (!/^[A-Z]{4}$/.test(icao)) {
+                    alert('Por favor, insira um código ICAO válido para o relatório.');
+                    return;
+                }
+                
+                const dateInput = isDaily ? elements.dailyReportDateInput : elements.monthlyReportDateInput;
+                const dateValue = dateInput.value;
+                
+                if (!dateValue) {
+                    alert(`Por favor, selecione ${isDaily ? 'uma data' : 'um mês'} para o relatório.`);
+                    return;
+                }
 
-            elements.generateMonthlyReportBtn.addEventListener('click', () => {
-                const dateValue = elements.monthlyReportDateInput.value;
-                if (!dateValue) return alert("Por favor, selecione um mês e ano para o relatório mensal.");
-                const [year, month] = dateValue.split('-');
-                const startDate = new Date(year, month - 1, 1, 0, 0, 0);
-                const endDate = new Date(year, parseInt(month), 0, 23, 59, 59);
-                gerarRelatorioPDF(startDate, endDate, 'Mensal');
-            });
+                let startDate, endDate;
+                if (isDaily) {
+                    const [year, month, day] = dateValue.split('-');
+                    startDate = new Date(year, month - 1, day, 0, 0, 0);
+                    endDate = new Date(year, month - 1, day, 23, 59, 59);
+                } else {
+                    const [year, month] = dateValue.split('-');
+                    startDate = new Date(year, month - 1, 1, 0, 0, 0);
+                    endDate = new Date(year, parseInt(month), 0, 23, 59, 59);
+                }
+                
+                gerarRelatorioPDF(icao, startDate, endDate, isDaily ? 'Diario' : 'Mensal');
+            };
+
+            elements.generateDailyReportBtn.addEventListener('click', () => gerarRelatorioHandler(true));
+            elements.generateMonthlyReportBtn.addEventListener('click', () => gerarRelatorioHandler(false));
             
             const hoje = new Date().toISOString().split('T')[0];
             elements.dailyReportDateInput.value = hoje;
@@ -342,13 +361,11 @@
             elements.aerodromoInput.addEventListener('keypress', e => { if (e.key === 'Enter') alterarAerodromo(); });
             elements.darkModeToggle.addEventListener('click', toggleDarkMode);
             document.addEventListener('click', unlockAudio, { once: true });
-
             carregarPreferencias();
             if (localStorage.getItem('darkMode') === 'enabled') {
                 document.body.classList.add('dark-mode');
                 elements.darkModeToggle.textContent = '☀️';
             }
-            
             state.ultimaHoraVerificada = new Date().getUTCHours();
             consultarMetar();
             state.intervalId = setInterval(consultarMetar, CONFIG.intervaloConsulta);
@@ -364,24 +381,20 @@
             const url = `${CONFIG.apiUrl}?localidade=${CONFIG.localidade}`;
             try {
                 const response = await fetch(url, { cache: 'no-store' });
-                // Verificação extra para garantir que a resposta é OK antes de tentar ler o JSON
-                if (!response.ok) {
-                    throw new Error(`Erro de rede: ${response.status} ${response.statusText}`);
-                }
+                if (!response.ok) throw new Error(`Erro de rede: ${response.status} ${response.statusText}`);
                 const data = await response.json();
                 if (!data.status) throw new Error(data.message || `API retornou status 'false'`);
                 if (data.data && data.data.data && data.data.data.length > 0) {
                     processarResposta(data);
                     atualizarStatus('OK', 'normal');
                 } else {
-                    // Se não houver dados, não tratamos como um erro fatal, apenas informamos.
-                    elements.metarRaw.textContent = `Nenhum METAR/SPECI encontrado para ${CONFIG.localidade} na última consulta.`;
+                    elements.metarRaw.textContent = `Nenhum METAR/SPECI encontrado para ${CONFIG.localidade}.`;
                     atualizarStatus('OK', 'normal');
                 }
             } catch (error) {
                 console.error(`Erro: ${error.message}`);
                 atualizarStatus('Erro de Conexão', 'error');
-                elements.metarRaw.textContent = `FALHA AO BUSCAR DADOS. Verifique o proxy ou a conexão. A REDEMET pode estar offline.`;
+                elements.metarRaw.textContent = `FALHA AO BUSCAR DADOS. Verifique o servidor local (proxy) ou a conexão.`;
             }
         }
         
@@ -402,7 +415,7 @@
                 calculateMetarAge();
             }
 
-            const regexMetarInfo = new RegExp(`(METAR|SPECI)\\s+(${CONFIG.localidade})\\s+(\\d{2})(\\d{2})(\\d{2})Z`);
+            const regexMetarInfo = new RegExp(`(METAR|SPECI)\\s+(${CONFIG.localidade})\\s+(\\d{2})(\\d{2})(\d{2})Z`);
             const match = metarCompletoMaisRecente.match(regexMetarInfo);
             if (match) {
                 const [_, type, icao, msgDay, msgHour, msgMinute] = match;
@@ -423,15 +436,13 @@
             todasAsMensagens.forEach(mensagem => {
                 const metarCompleto = mensagem.mens.trim();
                 const recebimentoAPI = mensagem.recebimento;
-                const matchMsg = metarCompleto.match(new RegExp(`(METAR|SPECI)\\s+(${CONFIG.localidade})\\s+(\\d{2})(\\d{2})(\\d{2})Z`));
+                const matchMsg = metarCompleto.match(new RegExp(`(METAR|SPECI)\\s+(${CONFIG.localidade})\\s+(\\d{2})(\\d{2})(\d{2})Z`));
                 if (matchMsg) {
                     adicionarAoHistoricoTela(metarCompleto, recebimentoAPI, parseInt(matchMsg[4], 10), parseInt(matchMsg[5], 10));
                 }
             });
             atualizarHistoricoTela();
         }
-
-        // --- Funções restantes (sem alterações) ---
 
         function adicionarAoHistoricoTela(metar, recebimentoAPI, horaUTC, minutoUTC) {
             const id = `${horaUTC.toString().padStart(2, '0')}${minutoUTC.toString().padStart(2, '0')}Z-${metar}`;
@@ -461,6 +472,7 @@
             const novoAerodromo = elements.aerodromoInput.value.trim().toUpperCase();
             if (!/^[A-Z]{4}$/.test(novoAerodromo)) { alert('Código ICAO inválido.'); return; }
             CONFIG.localidade = novoAerodromo;
+            elements.reportIcaoInput.value = novoAerodromo;
             state.historicoTela = [];
             state.metarHoraAtualEncontrado = false;
             state.ultimaHoraVerificada = new Date().getUTCHours();
@@ -567,7 +579,11 @@
             const autoRefreshSalvo = localStorage.getItem('autoRefresh');
             if (autoRefreshSalvo) { elements.autoRefresh.checked = autoRefreshSalvo === 'true'; toggleAutoRefresh(); }
             const aerodromoSalvo = localStorage.getItem('aerodromo');
-            if (aerodromoSalvo) { CONFIG.localidade = aerodromoSalvo; elements.aerodromoInput.value = aerodromoSalvo; }
+            if (aerodromoSalvo) { 
+                CONFIG.localidade = aerodromoSalvo; 
+                elements.aerodromoInput.value = aerodromoSalvo; 
+                elements.reportIcaoInput.value = aerodromoSalvo;
+            }
         }
 
         function ajustarVolume() {
