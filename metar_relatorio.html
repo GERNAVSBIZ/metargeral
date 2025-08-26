@@ -123,7 +123,6 @@
     
     <script>
         const CONFIG = {
-            // Aponta para a nova API criada para este sistema, que lida com buscas históricas.
             apiUrl: '/api/metaradm' 
         };
 
@@ -143,7 +142,7 @@
         document.addEventListener('DOMContentLoaded', inicializarApp);
 
         function inicializarApp() {
-            elements.historicalAerodromoInput.value = 'SBIZ'; // Aeródromo padrão
+            elements.historicalAerodromoInput.value = 'SBIZ';
             elements.historicalDateInput.valueAsDate = new Date();
             const today = new Date();
             const year = today.getFullYear();
@@ -267,7 +266,6 @@
                     if (data.status && data.data && data.data.data && data.data.data.length > 0) {
                         todasAsMensagens.push(...data.data.data);
                     }
-                    // Adiciona uma pequena pausa para não sobrecarregar a API
                     await new Promise(resolve => setTimeout(resolve, 200));
                 }
 
@@ -299,6 +297,9 @@
             }
         }
         
+        // ==================================================================
+        // AQUI ESTÁ A FUNÇÃO ATUALIZADA
+        // ==================================================================
         function isMessageInconsistent(msgObject) {
             const mensText = msgObject.mens || '';
             const recepcaoInfo = msgObject.timestamp || msgObject.recebimento;
@@ -316,15 +317,37 @@
             const msgDay = parseInt(match[1], 10);
             const msgHour = parseInt(match[2], 10);
             const msgMinute = parseInt(match[3], 10);
+
+            // --- LÓGICA CORRIGIDA PARA VIRADA DE DIA/MÊS/ANO ---
             
-            const msgDate = new Date(Date.UTC(recepcaoDate.getUTCFullYear(), recepcaoDate.getUTCMonth(), msgDay, msgHour, msgMinute));
+            const recepcaoYear = recepcaoDate.getUTCFullYear();
+            const recepcaoMonth = recepcaoDate.getUTCMonth(); // Mês em base 0 (Janeiro = 0)
+
+            // Cria 3 datas candidatas para a mensagem, pois ela pode ser do mês anterior, atual ou seguinte
+            const dateCurrentMonth = new Date(Date.UTC(recepcaoYear, recepcaoMonth, msgDay, msgHour, msgMinute));
+            const datePreviousMonth = new Date(Date.UTC(recepcaoYear, recepcaoMonth - 1, msgDay, msgHour, msgMinute));
+            const dateNextMonth = new Date(Date.UTC(recepcaoYear, recepcaoMonth + 1, msgDay, msgHour, msgMinute));
             
-            if (isNaN(msgDate.getTime())) return false;
+            // Calcula a diferença de tempo absoluta entre a recepção e cada uma das datas candidatas
+            const diffCurrent = Math.abs(recepcaoDate.getTime() - dateCurrentMonth.getTime());
+            const diffPrevious = Math.abs(recepcaoDate.getTime() - datePreviousMonth.getTime());
+            const diffNext = Math.abs(recepcaoDate.getTime() - dateNextMonth.getTime());
+
+            // A data correta da mensagem (bestMsgDate) é aquela com a menor diferença de tempo
+            let bestMsgDate = dateCurrentMonth;
+            if (diffPrevious < diffCurrent && diffPrevious < diffNext) {
+                bestMsgDate = datePreviousMonth;
+            } else if (diffNext < diffCurrent && diffNext < diffPrevious) {
+                bestMsgDate = dateNextMonth;
+            }
             
-            const diffEmMinutos = (recepcaoDate.getTime() - msgDate.getTime()) / (1000 * 60);
+            // Calcula a diferença real em minutos usando a data correta
+            const diffEmMinutos = (recepcaoDate.getTime() - bestMsgDate.getTime()) / (1000 * 60);
 
             const threshold = (tipo === 'METAR') ? 5 : 15;
 
+            // A inconsistência só ocorre se a mensagem estiver ATRASADA (diferença positiva) acima do limite.
+            // Mensagens adiantadas (diferença negativa) não são inconsistentes.
             return diffEmMinutos > threshold;
         }
 
