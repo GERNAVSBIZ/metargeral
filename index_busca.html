@@ -171,9 +171,10 @@
         // --- CONFIGURAÇÕES GLOBAIS ---
         const CONFIG = {
             localidade: 'SBIZ',
-            apiUrl: '/api/metar',
-            intervaloConsulta: 40000,      // Atualiza a tela principal
-            intervaloColetaDB: 300000,     // Salva dados para relatórios (5 min)
+            // CORREÇÃO: URL completa da API da Redemet.
+            apiUrl: 'https://redemet.decea.mil.br/api/consulta_automatica/index.php',
+            intervaloConsulta: 40000,
+            intervaloColetaDB: 300000,
             tempoAlerta: 2,
             volumeAlarme: 0.7,
             maxHistoricoTela: 10
@@ -198,24 +199,31 @@
 
         // --- BANCO DE DADOS (INDEXEDDB) PARA RELATÓRIOS ---
         function inicializarDB() {
-            const request = indexedDB.open("MetarDatabase", 2);
+            // CORREÇÃO: Versão do banco incrementada para 3 para forçar a atualização do schema.
+            const request = indexedDB.open("MetarDatabase", 3);
+            
             request.onerror = (event) => {
                 console.error("Erro ao abrir o IndexedDB:", event.target.errorCode);
                 elements.reportStatus.textContent = "Erro: Banco de dados local não pôde ser iniciado.";
             };
+            
             request.onupgradeneeded = (event) => {
                 const db = event.target.result;
+                // Lógica robusta para criar a "tabela" (ObjectStore) e seus índices apenas se não existirem.
                 if (!db.objectStoreNames.contains('metar_reports')) {
                     const objectStore = db.createObjectStore("metar_reports", { keyPath: "id", autoIncrement: true });
                     objectStore.createIndex("icao_recebimento_msg", ["icao", "recebimento", "mensagem"], { unique: true });
+                    // CORREÇÃO: Nome do índice consistente.
                     objectStore.createIndex("dataRecebimento", "dataRecebimento", { unique: false });
                 }
             };
+
             request.onsuccess = (event) => {
                 state.db = event.target.result;
                 console.log("Banco de dados IndexedDB inicializado.");
+                // Inicia a coleta de dados em background para os relatórios.
                 setInterval(coletarDadosParaDB, CONFIG.intervaloColetaDB);
-                coletarDadosParaDB();
+                coletarDadosParaDB(); // Executa uma vez no início.
             };
         }
 
@@ -238,7 +246,8 @@
         }
 
         async function coletarDadosParaDB() {
-            const url = `${CONFIG.apiUrl}?localidade=${CONFIG.localidade}`;
+            // CORREÇÃO: URL montada com os parâmetros corretos da API.
+            const url = `${CONFIG.apiUrl}?local=${CONFIG.localidade}&msg=metar`;
             try {
                 const response = await fetch(url, { cache: 'no-store' });
                 const data = await response.json();
@@ -261,6 +270,7 @@
             elements.reportStatus.textContent = `Gerando relatório ${reportType}... Por favor, aguarde.`;
             const transacao = state.db.transaction(["metar_reports"], "readonly");
             const objectStore = transacao.objectStore("metar_reports");
+            // CORREÇÃO: Usando o nome correto do índice.
             const index = objectStore.index("dataRecebimento");
             const range = IDBKeyRange.bound(startDate, endDate);
             const request = index.getAll(range);
@@ -364,7 +374,7 @@
         async function consultarMetar() {
             if (!state.consultaAtiva) return;
             atualizarStatus('Consultando...', 'warning');
-            const url = `${CONFIG.apiUrl}?localidade=${CONFIG.localidade}`;
+            const url = `${CONFIG.apiUrl}?local=${CONFIG.localidade}&msg=metar`;
             try {
                 const response = await fetch(url, { cache: 'no-store' });
                 const data = await response.json();
@@ -378,7 +388,7 @@
             } catch (error) {
                 console.error(`Erro: ${error.message}`);
                 atualizarStatus('Erro de Conexão', 'error');
-                elements.metarRaw.textContent = `FALHA AO BUSCAR DADOS. Verifique sua conexão ou a API. A REDEMET pode estar offline.`;
+                elements.metarRaw.textContent = `FALHA AO BUSCAR DADOS. Verifique sua conexão. A REDEMET pode estar offline.`;
             }
         }
         
@@ -413,18 +423,16 @@
                 }
             }
             
-            if (metarDaHoraEncontradoNaConsulta && !state.metarHoraAtualEncontrado) {
-                 console.log(`Msg válida para hora ${agora.getUTCHours()}Z encontrada.`);
+            if (metarDaHoraEncontradoNaConsulta) {
                  state.metarHoraAtualEncontrado = true;
                  desativarAlerta();
             }
 
-            // Atualiza o histórico da tela
             state.historicoTela = [];
             todasAsMensagens.forEach(mensagem => {
                 const metarCompleto = mensagem.mens.trim();
                 const recebimentoAPI = mensagem.recebimento;
-                const matchMsg = metarCompleto.match(new RegExp(`(METAR|SPECI)\\s+(${CONFIG.localidade})\\s+(\\d{2})(\\d{2})(\\d{2})Z`));
+                const matchMsg = metarCompleto.match(new RegExp(`(METAR|SPECI)\\s+(${CONFIG.localidade})\\s+(\\d{2})(\d{2})(\d{2})Z`));
                 if (matchMsg) {
                     adicionarAoHistoricoTela(metarCompleto, recebimentoAPI, parseInt(matchMsg[4], 10), parseInt(matchMsg[5], 10));
                 }
@@ -456,7 +464,6 @@
             elements.historyContainer.innerHTML = html;
         }
 
-        // --- FUNÇÕES UTILITÁRIAS E DE CONTROLE ---
         function alterarAerodromo() {
             const novoAerodromo = elements.aerodromoInput.value.trim().toUpperCase();
             if (!/^[A-Z]{4}$/.test(novoAerodromo)) { alert('Código ICAO inválido.'); return; }
@@ -557,7 +564,7 @@
                 elements.audioUnlockPrompt.style.display = 'none';
                 console.log("Áudio habilitado pelo usuário.");
             }).catch(e => {
-                console.warn("Falha ao pré-carregar o áudio, a interação do usuário pode ser necessária novamente.", e);
+                console.warn("Falha ao pré-carregar o áudio.", e);
             });
         }
 
