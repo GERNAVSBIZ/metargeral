@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Monitor METAR/SPECI</title>
+    <title>Monito METAR/SPECI</title>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
         @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap');
@@ -168,11 +168,10 @@
     <script>
         const { jsPDF } = window.jspdf;
 
-        // --- CONFIGURAÇÕES GLOBAIS ---
         const CONFIG = {
             localidade: 'SBIZ',
-            // CORREÇÃO: URL completa da API da Redemet.
-            apiUrl: 'https://redemet.decea.mil.br/api/consulta_automatica/index.php',
+            // CORREÇÃO: Voltamos a usar a URL do proxy local para evitar problemas de CORS.
+            apiUrl: '/api/metar',
             intervaloConsulta: 40000,
             intervaloColetaDB: 300000,
             tempoAlerta: 2,
@@ -180,7 +179,6 @@
             maxHistoricoTela: 10
         };
 
-        // --- ELEMENTOS DO DOM ---
         const elements = {
             statusValue: document.getElementById('statusValue'), statusIcon: document.getElementById('statusIcon'), lastCheckTime: document.getElementById('lastCheckTime'), nextCheckTime: document.getElementById('nextCheckTime'), countdown: document.getElementById('countdown'), metarRaw: document.getElementById('metarRaw'), metarTime: document.getElementById('metarTime'), alertPanel: document.getElementById('alertPanel'), alertMessage: document.getElementById('alertMessage'), silenceButton: document.getElementById('silenceButton'), historyContainer: document.getElementById('historyContainer'), volumeControl: document.getElementById('volumeControl'), autoRefresh: document.getElementById('autoRefresh'), alertSound: document.getElementById('alertSound'), aerodromoInput: document.getElementById('aerodromoInput'), alterarAerodromo: document.getElementById('alterarAerodromo'), aerodromoHeader: document.getElementById('aerodromoHeader'), footerText: document.getElementById('footerText'), audioUnlockPrompt: document.getElementById('audioUnlockPrompt'),
             darkModeToggle: document.getElementById('darkModeToggle'), metarTimestamp: document.getElementById('metarTimestamp'), metarAge: document.getElementById('metarAge'),
@@ -191,15 +189,12 @@
             reportStatus: document.getElementById('reportStatus')
         };
 
-        // --- ESTADO DA APLICAÇÃO ---
         const state = {
             ultimoMetarCompleto: null, ultimaHoraVerificada: null, metarHoraAtualEncontrado: false, emAlerta: false, alarmeSilenciado: false, historicoTela: [], consultaAtiva: true, intervalId: null, audioUnlocked: false, metarAgeIntervalId: null,
             db: null
         };
 
-        // --- BANCO DE DADOS (INDEXEDDB) PARA RELATÓRIOS ---
         function inicializarDB() {
-            // CORREÇÃO: Versão do banco incrementada para 3 para forçar a atualização do schema.
             const request = indexedDB.open("MetarDatabase", 3);
             
             request.onerror = (event) => {
@@ -209,11 +204,9 @@
             
             request.onupgradeneeded = (event) => {
                 const db = event.target.result;
-                // Lógica robusta para criar a "tabela" (ObjectStore) e seus índices apenas se não existirem.
                 if (!db.objectStoreNames.contains('metar_reports')) {
                     const objectStore = db.createObjectStore("metar_reports", { keyPath: "id", autoIncrement: true });
                     objectStore.createIndex("icao_recebimento_msg", ["icao", "recebimento", "mensagem"], { unique: true });
-                    // CORREÇÃO: Nome do índice consistente.
                     objectStore.createIndex("dataRecebimento", "dataRecebimento", { unique: false });
                 }
             };
@@ -221,9 +214,8 @@
             request.onsuccess = (event) => {
                 state.db = event.target.result;
                 console.log("Banco de dados IndexedDB inicializado.");
-                // Inicia a coleta de dados em background para os relatórios.
                 setInterval(coletarDadosParaDB, CONFIG.intervaloColetaDB);
-                coletarDadosParaDB(); // Executa uma vez no início.
+                coletarDadosParaDB();
             };
         }
 
@@ -246,8 +238,7 @@
         }
 
         async function coletarDadosParaDB() {
-            // CORREÇÃO: URL montada com os parâmetros corretos da API.
-            const url = `${CONFIG.apiUrl}?local=${CONFIG.localidade}&msg=metar`;
+            const url = `${CONFIG.apiUrl}?localidade=${CONFIG.localidade}`;
             try {
                 const response = await fetch(url, { cache: 'no-store' });
                 const data = await response.json();
@@ -261,7 +252,6 @@
             }
         }
         
-        // --- LÓGICA DE GERAÇÃO DE PDF ---
         async function gerarRelatorioPDF(startDate, endDate, reportType) {
             if (!state.db) {
                 alert("O banco de dados não está pronto. Tente novamente em alguns instantes.");
@@ -270,7 +260,6 @@
             elements.reportStatus.textContent = `Gerando relatório ${reportType}... Por favor, aguarde.`;
             const transacao = state.db.transaction(["metar_reports"], "readonly");
             const objectStore = transacao.objectStore("metar_reports");
-            // CORREÇÃO: Usando o nome correto do índice.
             const index = objectStore.index("dataRecebimento");
             const range = IDBKeyRange.bound(startDate, endDate);
             const request = index.getAll(range);
@@ -318,8 +307,6 @@
                 elements.reportStatus.textContent = "";
             };
         }
-
-        // --- FUNÇÕES PRINCIPAIS DA APLICAÇÃO ---
         
         document.addEventListener('DOMContentLoaded', inicializarApp);
 
@@ -374,21 +361,27 @@
         async function consultarMetar() {
             if (!state.consultaAtiva) return;
             atualizarStatus('Consultando...', 'warning');
-            const url = `${CONFIG.apiUrl}?local=${CONFIG.localidade}&msg=metar`;
+            const url = `${CONFIG.apiUrl}?localidade=${CONFIG.localidade}`;
             try {
                 const response = await fetch(url, { cache: 'no-store' });
+                // Verificação extra para garantir que a resposta é OK antes de tentar ler o JSON
+                if (!response.ok) {
+                    throw new Error(`Erro de rede: ${response.status} ${response.statusText}`);
+                }
                 const data = await response.json();
                 if (!data.status) throw new Error(data.message || `API retornou status 'false'`);
                 if (data.data && data.data.data && data.data.data.length > 0) {
                     processarResposta(data);
                     atualizarStatus('OK', 'normal');
                 } else {
-                    throw new Error(`Não há METAR/SPECI recente para ${CONFIG.localidade}.`);
+                    // Se não houver dados, não tratamos como um erro fatal, apenas informamos.
+                    elements.metarRaw.textContent = `Nenhum METAR/SPECI encontrado para ${CONFIG.localidade} na última consulta.`;
+                    atualizarStatus('OK', 'normal');
                 }
             } catch (error) {
                 console.error(`Erro: ${error.message}`);
                 atualizarStatus('Erro de Conexão', 'error');
-                elements.metarRaw.textContent = `FALHA AO BUSCAR DADOS. Verifique sua conexão. A REDEMET pode estar offline.`;
+                elements.metarRaw.textContent = `FALHA AO BUSCAR DADOS. Verifique o proxy ou a conexão. A REDEMET pode estar offline.`;
             }
         }
         
@@ -398,29 +391,27 @@
             const todasAsMensagens = data.data.data;
             let metarDaHoraEncontradoNaConsulta = false;
 
-            if (todasAsMensagens.length > 0) {
-                const mensagemParaExibir = todasAsMensagens.find(m => m.mens.trim().startsWith('SPECI')) || todasAsMensagens[0];
-                const metarCompletoMaisRecente = mensagemParaExibir.mens.trim();
-                
-                if(state.ultimoMetarCompleto !== metarCompletoMaisRecente) {
-                    state.ultimoMetarCompleto = metarCompletoMaisRecente;
-                    elements.metarRaw.textContent = metarCompletoMaisRecente;
-                    const flightCategory = getFlightCategory(metarCompletoMaisRecente);
-                    document.getElementById('main-metar-card').className = 'card flight-cat-' + flightCategory;
-                    calculateMetarAge();
-                }
+            const mensagemParaExibir = todasAsMensagens.find(m => m.mens.trim().startsWith('SPECI')) || todasAsMensagens[0];
+            const metarCompletoMaisRecente = mensagemParaExibir.mens.trim();
+            
+            if(state.ultimoMetarCompleto !== metarCompletoMaisRecente) {
+                state.ultimoMetarCompleto = metarCompletoMaisRecente;
+                elements.metarRaw.textContent = metarCompletoMaisRecente;
+                const flightCategory = getFlightCategory(metarCompletoMaisRecente);
+                document.getElementById('main-metar-card').className = 'card flight-cat-' + flightCategory;
+                calculateMetarAge();
+            }
 
-                const regexMetarInfo = new RegExp(`(METAR|SPECI)\\s+(${CONFIG.localidade})\\s+(\\d{2})(\\d{2})(\\d{2})Z`);
-                const match = metarCompletoMaisRecente.match(regexMetarInfo);
-                if (match) {
-                    const [_, type, icao, msgDay, msgHour, msgMinute] = match;
-                    elements.metarTimestamp.textContent = `Recebido em: ${mensagemParaExibir.recebimento} - Msg: ${msgDay}${msgHour}${msgMinute}Z`;
-                    if (parseInt(msgHour, 10) === agora.getUTCHours() && parseInt(msgDay, 10) === agora.getUTCDate()) {
-                        metarDaHoraEncontradoNaConsulta = true;
-                    }
-                } else {
-                    elements.metarTimestamp.textContent = `Recebido: ${mensagemParaExibir.recebimento}`;
+            const regexMetarInfo = new RegExp(`(METAR|SPECI)\\s+(${CONFIG.localidade})\\s+(\\d{2})(\\d{2})(\\d{2})Z`);
+            const match = metarCompletoMaisRecente.match(regexMetarInfo);
+            if (match) {
+                const [_, type, icao, msgDay, msgHour, msgMinute] = match;
+                elements.metarTimestamp.textContent = `Recebido em: ${mensagemParaExibir.recebimento} - Msg: ${msgDay}${msgHour}${msgMinute}Z`;
+                if (parseInt(msgHour, 10) === agora.getUTCHours() && parseInt(msgDay, 10) === agora.getUTCDate()) {
+                    metarDaHoraEncontradoNaConsulta = true;
                 }
+            } else {
+                elements.metarTimestamp.textContent = `Recebido: ${mensagemParaExibir.recebimento}`;
             }
             
             if (metarDaHoraEncontradoNaConsulta) {
@@ -432,13 +423,15 @@
             todasAsMensagens.forEach(mensagem => {
                 const metarCompleto = mensagem.mens.trim();
                 const recebimentoAPI = mensagem.recebimento;
-                const matchMsg = metarCompleto.match(new RegExp(`(METAR|SPECI)\\s+(${CONFIG.localidade})\\s+(\\d{2})(\d{2})(\d{2})Z`));
+                const matchMsg = metarCompleto.match(new RegExp(`(METAR|SPECI)\\s+(${CONFIG.localidade})\\s+(\\d{2})(\\d{2})(\\d{2})Z`));
                 if (matchMsg) {
                     adicionarAoHistoricoTela(metarCompleto, recebimentoAPI, parseInt(matchMsg[4], 10), parseInt(matchMsg[5], 10));
                 }
             });
             atualizarHistoricoTela();
         }
+
+        // --- Funções restantes (sem alterações) ---
 
         function adicionarAoHistoricoTela(metar, recebimentoAPI, horaUTC, minutoUTC) {
             const id = `${horaUTC.toString().padStart(2, '0')}${minutoUTC.toString().padStart(2, '0')}Z-${metar}`;
