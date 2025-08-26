@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Monitor METAR/SPECI</title>
+    <!-- Favicon em branco para evitar erro 404 no console -->
+    <link rel="icon" href="data:;base64,iVBORw0KGgo=">
     <!-- Bibliotecas para geração de PDF -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
@@ -179,7 +181,7 @@
             intervaloConsulta: 40000,
             tempoAlerta: 2,
             volumeAlarme: 0.7,
-            maxHistorico: 10
+            maxHistorico: 50 // Aumentado o limite do histórico para a sessão
         };
 
         const elements = {
@@ -258,7 +260,8 @@
                     processarResposta(data);
                     atualizarStatus('OK', 'normal');
                 } else {
-                    throw new Error(`Não há METAR/SPECI recente para ${CONFIG.localidade}.`);
+                    // Não considera "sem METAR recente" um erro de conexão, apenas um estado.
+                    atualizarStatus('Aguardando', 'warning');
                 }
             } catch (error) {
                 console.error(`Erro: ${error.message}`);
@@ -283,7 +286,7 @@
                     document.getElementById('main-metar-card').className = 'card';
                     document.getElementById('main-metar-card').classList.add(`flight-cat-${flightCategory}`);
                     calculateMetarAge();
-                    const regexMetarInfo = new RegExp(`(METAR|SPECI)\\s+(${CONFIG.localidade})\\s+(\\d{2})(\\d{2})(\d{2})Z`);
+                    const regexMetarInfo = new RegExp(`(METAR|SPECI)\\s+(${CONFIG.localidade})\\s+(\\d{2})(\\d{2})(\\d{2})Z`);
                     const match = metarCompletoMaisRecente.match(regexMetarInfo);
                     if (match) {
                         const [_, type, icao, msgDay, msgHour, msgMinute] = match;
@@ -298,7 +301,8 @@
                     }
                 }
             }
-            state.historicoMetar = [];
+
+            // CORREÇÃO: Não limpa mais o histórico. Apenas adiciona as novas mensagens.
             data.data.data.forEach(mensagem => {
                 const metarCompleto = mensagem.mens.trim();
                 const recebimentoAPI = mensagem.recebimento;
@@ -315,7 +319,7 @@
             if (!/^[A-Z]{4}$/.test(novoAerodromo)) { alert('Código ICAO inválido.'); return; }
             CONFIG.localidade = novoAerodromo;
             elements.reportIcaoInput.value = novoAerodromo; // NOVO: Sincroniza ICAO do relatório
-            state.historicoMetar = [];
+            state.historicoMetar = []; // Limpa o histórico ao trocar de aeródromo
             state.metarHoraAtualEncontrado = false;
             state.ultimaHoraVerificada = new Date().getUTCHours();
             elements.historyContainer.innerHTML = '<p class="no-history">Nenhum histórico</p>';
