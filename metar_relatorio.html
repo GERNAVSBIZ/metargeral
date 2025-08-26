@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin - Relatórios METAR/SPECI</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.23/jspdf.plugin.autotable.min.js"></script>
+    <style>
+        /* Estilos CSS (inalterados, continuam aqui) */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap');
+        :root {
+            --primary-color: #0f172a; --primary-light: #1e293b; --secondary-color: #3b82f6;
+            --accent-color: #06b6d4; --background-color: #f8fafc;
+            --background-gradient: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+            --text-color: #1e293b; --text-muted: #64748b; --alert-color: #ef4444;
+            --success-color: #10b981; --warning-color: #f59e0b; --border-radius: 16px;
+            --border-radius-sm: 8px; --box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            --box-shadow-lg: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+            --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Inter', sans-serif; line-height: 1.6; color: var(--text-color); background: var(--background-gradient); padding: 24px; min-height: 100vh; }
+        header { background: linear-gradient(135deg, var(--primary-color) 0%, var(--primary-light) 100%); color: white; padding: 32px; border-radius: var(--border-radius); margin-bottom: 32px; text-align: center; box-shadow: var(--box-shadow-lg); }
+        header h1 { font-size: 2.5rem; font-weight: 700; }
+        .historical-search-container { max-width: 1400px; margin: 0 auto; }
+        .card { background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(10px); border-radius: var(--border-radius); padding: 24px; box-shadow: var(--box-shadow); border: 1px solid rgba(255, 255, 255, 0.2); }
+        .historical-search { margin-top: 32px; }
+        .search-controls { display: flex; flex-wrap: wrap; gap: 24px; align-items: center; }
+        .search-controls input { padding: 10px; border: 2px solid rgba(148, 163, 184, 0.3); border-radius: var(--border-radius-sm); font-size: 1rem; }
+        .search-controls button { padding: 10px 20px; font-size: 1rem; background: var(--primary-color); color: white; border: none; border-radius: var(--border-radius-sm); cursor: pointer; transition: var(--transition); }
+        .search-controls button:hover { background: var(--primary-light); }
+        .search-controls button:disabled { background: var(--text-muted); cursor: not-allowed; }
+        #historicalSearchStatus { margin-top: 16px; font-weight: 500; }
+        .search-type-selector, .search-filter { margin-bottom: 16px; display: flex; gap: 16px; align-items: center; font-weight: 500;}
+        .hidden { display: none; }
+        footer { margin-top: 48px; text-align: center; color: var(--text-muted); }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Admin - Busca de Relatórios METAR/SPECI</h1>
+    </header>
+
+    <div class="historical-search-container">
+        <div class="card historical-search">
+            <h3>Busca Histórica e Relatórios</h3>
+            </div>
+    </div>
+
+    <footer>
+        <p>Sistema de Geração de Relatórios METAR/SPECI</p>
+    </footer>
+    
+    <script>
+        // --- MUDANÇA IMPORTANTE ---
+        // A chave foi removida e o endereço da API agora aponta para o nosso "garçom"
+        const CONFIG = {
+            apiUrl: '/api/metar' // Aponta para o nosso arquivo /api/metar.js
+        };
+
+        const elements = {
+            // ... (elementos da busca histórica, inalterados)
+        };
+
+        document.addEventListener('DOMContentLoaded', inicializarApp);
+        
+        function inicializarApp() {
+            // ... (inicialização dos botões, inalterada)
+        }
+        
+        // --- MUDANÇA SUTIL NO CÓDIGO DE BUSCA ---
+        async function buscarHistoricoDiarioEGerarPDF() {
+            // ...
+            const data_ini = date.replace(/-/g, '') + '00';
+            const data_fim = date.replace(/-/g, '') + '23';
+
+            // A URL agora é montada de forma diferente, sem a chave!
+            const url = `${CONFIG.apiUrl}?localidade=${icao}&data_ini=${data_ini}&data_fim=${data_fim}`;
+            
+            // O resto da função continua igual...
+        }
+        
+        // A mesma mudança na URL acontece na função de busca mensal
+        async function buscarHistoricoMensalEGerarPDF() {
+            // ...
+            // A URL também é montada sem a chave
+            const url = `${CONFIG.apiUrl}?localidade=${icao}&data_ini=${data_ini}&data_fim=${data_fim}`;
+            // ...
+        }
+
+        // As funções 'isMessageInconsistent' e 'gerarPDFHistorico' continuam aqui, inalteradas.
+
+    </script>
+</body>
+</html>
