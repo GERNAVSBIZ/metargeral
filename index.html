@@ -257,7 +257,7 @@
             } catch (error) {
                 console.error(`Erro: ${error.message}`);
                 atualizarStatus('Erro de Conexão', 'error');
-                elements.metarRaw.textContent = `FALHA AO BUSCAR DADOS. Verifique sua conexão ou se a chave API é válida. A REDEMET pode estar offline.`;
+                elements.metarRaw.textContent = `Aguardando METAR/SPECI válido. A REDEMET pode estar offline.`;
             }
         }
         
@@ -436,5 +436,6 @@
     </script>
 </body>
 </html>
+
 
 
