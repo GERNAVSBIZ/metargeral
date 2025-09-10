@@ -139,7 +139,6 @@
             dailyInputContainer: document.getElementById('dailyInputContainer'),
             monthlyInputContainer: document.getElementById('monthlyInputContainer'),
             filterInconsistent: document.getElementById('filterInconsistent'),
-            // NOVA REFERÊNCIA ADICIONADA
             filterCor: document.getElementById('filterCor')
         };
 
@@ -206,11 +205,12 @@
 
                 let dadosParaRelatorio = (data.data && data.data.data && data.data.data.length > 0) ? data.data.data : [];
 
-                // LÓGICA DE FILTRO DE MENSAGENS COR ADICIONADA
+                // Filtra mensagens COR apenas se o checkbox estiver marcado
                 if (elements.filterCor.checked) {
                     dadosParaRelatorio = dadosParaRelatorio.filter(msg => !/^(METAR|SPECI)\sCOR/.test(msg.mens.trim()));
                 }
 
+                // Filtra por inconsistência
                 if (elements.filterInconsistent.checked) {
                     dadosParaRelatorio = dadosParaRelatorio.filter(msg => isMessageInconsistent(msg));
                 }
@@ -221,9 +221,7 @@
                     gerarPDFHistorico(dadosParaRelatorio, icao, date, 'daily');
                 } else {
                     const dataFormatada = new Date(date.replace(/-/g, '/')).toLocaleDateString();
-                    const msgText = elements.filterInconsistent.checked 
-                        ? `Nenhuma mensagem inconsistente encontrada para ${icao} na data ${dataFormatada}.`
-                        : `Nenhuma mensagem encontrada para ${icao} na data ${dataFormatada}.`;
+                    const msgText = `Nenhuma mensagem encontrada para ${icao} na data ${dataFormatada} com os filtros aplicados.`;
                     statusEl.textContent = msgText;
                     statusEl.style.color = 'var(--warning-color)';
                 }
@@ -280,11 +278,12 @@
 
                 let dadosParaRelatorio = todasAsMensagens;
 
-                // LÓGICA DE FILTRO DE MENSAGENS COR ADICIONADA
+                // Filtra mensagens COR apenas se o checkbox estiver marcado
                 if (elements.filterCor.checked) {
                     dadosParaRelatorio = dadosParaRelatorio.filter(msg => !/^(METAR|SPECI)\sCOR/.test(msg.mens.trim()));
                 }
 
+                // Filtra por inconsistência
                 if (elements.filterInconsistent.checked) {
                     dadosParaRelatorio = dadosParaRelatorio.filter(msg => isMessageInconsistent(msg));
                 }
@@ -295,9 +294,7 @@
                     gerarPDFHistorico(dadosParaRelatorio, icao, monthValue, 'monthly');
                 } else {
                     const monthName = new Date(year, month - 1, 1).toLocaleString('pt-BR', { month: 'long' });
-                    const msgText = elements.filterInconsistent.checked
-                        ? `Nenhuma mensagem inconsistente encontrada para ${icao} em ${monthName} de ${year}.`
-                        : `Nenhuma mensagem encontrada para ${icao} em ${monthName} de ${year}.`;
+                    const msgText = `Nenhuma mensagem encontrada para ${icao} em ${monthName} de ${year} com os filtros aplicados.`;
                     statusEl.textContent = msgText;
                     statusEl.style.color = 'var(--warning-color)';
                 }
@@ -320,8 +317,10 @@
             const recepcaoDate = new Date((typeof recepcaoInfo === 'string' ? recepcaoInfo.replace(' ', 'T') + 'Z' : recepcaoInfo));
             if (isNaN(recepcaoDate.getTime())) return false;
             
-            // Ignora a checagem para mensagens COR
-            if (/^(METAR|SPECI)\sCOR/.test(mensText.trim())) return false;
+            // ### LINHA REMOVIDA DAQUI ###
+            // A linha "if (/^(METAR|SPECI)\sCOR/.test(mensText.trim())) return false;" foi removida
+            // para garantir que a checagem de inconsistência ocorra em todas as mensagens,
+            // e o filtro de COR seja aplicado apenas pela função principal.
 
             const tipo = mensText.trim().startsWith('SPECI') ? 'SPECI' : 'METAR';
             const regex = /\s(\d{2})(\d{2})(\d{2})Z\s/;
@@ -383,6 +382,7 @@
 
             if (type === 'monthly') {
                 let totalMetar = 0, totalSpeci = 0, inconsistentMetar = 0, inconsistentSpeci = 0;
+                // O array `mensagens` já chega aqui pré-filtrado, então a contagem será correta.
                 mensagens.forEach(msg => {
                     const isSpeci = msg.mens.trim().startsWith('SPECI');
                     const isInconsistent = isMessageInconsistent(msg);
@@ -418,10 +418,10 @@
             const dadosFormatados = mensagens.map(msg => {
                 const msgTrimmed = msg.mens.trim();
                 let tipo = 'METAR';
-                if (msgTrimmed.startsWith('SPECI')) tipo = 'SPECI';
-                if (msgTrimmed.startsWith('METAR COR')) tipo = 'METAR COR';
                 if (msgTrimmed.startsWith('SPECI COR')) tipo = 'SPECI COR';
-
+                else if (msgTrimmed.startsWith('SPECI')) tipo = 'SPECI';
+                else if (msgTrimmed.startsWith('METAR COR')) tipo = 'METAR COR';
+                
                 const regex = /\s(\d{2})(\d{2})(\d{2})Z\s/;
                 const match = msg.mens.match(regex);
                 let horaUTC = "N/A";
