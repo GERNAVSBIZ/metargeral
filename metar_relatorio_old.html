@@ -66,13 +66,27 @@
         .card:hover { transform: translateY(-2px); box-shadow: var(--box-shadow-lg); }
         
         .historical-search { margin-top: 32px; }
-        .search-controls { display: flex; flex-wrap: wrap; gap: 24px; align-items: center; }
-        .search-controls input[type="text"], .search-controls input[type="date"], .search-controls input[type="month"] { padding: 10px; border: 2px solid rgba(148, 163, 184, 0.3); border-radius: var(--border-radius-sm); font-size: 1rem; }
+        /* MODIFICADO: Ajuste para o textarea */
+        .search-controls { display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start; }
+        .search-controls input[type="date"], .search-controls input[type="month"] { padding: 10px; border: 2px solid rgba(148, 163, 184, 0.3); border-radius: var(--border-radius-sm); font-size: 1rem; }
+        /* NOVO: Estilo para o textarea */
+        .search-controls textarea {
+            padding: 10px;
+            border: 2px solid rgba(148, 163, 184, 0.3);
+            border-radius: var(--border-radius-sm);
+            font-size: 1rem;
+            font-family: 'JetBrains Mono', monospace;
+            text-transform: uppercase;
+            width: 250px;
+            height: 100px;
+            resize: vertical;
+        }
         .search-controls button { padding: 10px 20px; font-size: 1rem; background: var(--primary-color); color: white; border: none; border-radius: var(--border-radius-sm); cursor: pointer; transition: var(--transition); }
         .search-controls button:hover { background: var(--primary-light); }
         .search-controls button:disabled { background: var(--text-muted); cursor: not-allowed; }
         #historicalSearchStatus { margin-top: 16px; font-weight: 500; }
-        .search-type-selector, .search-filter { margin-bottom: 16px; display: flex; gap: 16px; align-items: center; font-weight: 500;}
+        .search-type-selector { margin-bottom: 16px; display: flex; gap: 16px; align-items: center; font-weight: 500;}
+        .search-filters { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
         .hidden { display: none; }
 
         footer { margin-top: 48px; text-align: center; color: var(--text-muted); }
@@ -93,13 +107,17 @@
                 <label><input type="radio" name="searchType" value="monthly" id="radioMensal"> Mensal</label>
             </div>
 
-             <div class="search-filter">
+             <div class="search-filters">
                 <label><input type="checkbox" id="filterInconsistent"> Gerar somente com mensagens inconsistentes</label>
+                <label><input type="checkbox" id="filterCor"> Ignorar mensagens corrigidas (COR)</label>
             </div>
 
             <div class="search-controls">
-                <label for="historicalAerodromoInput">Código ICAO:</label>
-                <input type="text" id="historicalAerodromoInput" maxlength="4" style="text-transform: uppercase; width: 100px;">
+                <div>
+                    <label for="historicalAerodromoInput">Códigos ICAO:</label>
+                    <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 4px;">Separados por espaço, vírgula ou nova linha</p>
+                    <textarea id="historicalAerodromoInput"></textarea>
+                </div>
                 
                 <div id="dailyInputContainer">
                     <label for="historicalDateInput">Data:</label>
@@ -136,13 +154,14 @@
             radioMensal: document.getElementById('radioMensal'),
             dailyInputContainer: document.getElementById('dailyInputContainer'),
             monthlyInputContainer: document.getElementById('monthlyInputContainer'),
-            filterInconsistent: document.getElementById('filterInconsistent')
+            filterInconsistent: document.getElementById('filterInconsistent'),
+            filterCor: document.getElementById('filterCor')
         };
 
         document.addEventListener('DOMContentLoaded', inicializarApp);
 
         function inicializarApp() {
-            elements.historicalAerodromoInput.value = 'SBIZ';
+            elements.historicalAerodromoInput.value = 'SBIZ\nSBGR\nSBSP'; // Exemplo com múltiplos ICAOs
             elements.historicalDateInput.valueAsDate = new Date();
             const today = new Date();
             const year = today.getFullYear();
@@ -164,112 +183,56 @@
             }
         }
         
-        function iniciarBuscaHistorica() {
-            if (elements.radioDiario.checked) {
-                buscarHistoricoDiarioEGerarPDF();
-            } else {
-                buscarHistoricoMensalEGerarPDF();
-            }
-        }
+        // MODIFICADO: Função principal para orquestrar a busca
+        async function iniciarBuscaHistorica() {
+            const icaoCodesRaw = elements.historicalAerodromoInput.value.trim();
+            const icaos = icaoCodesRaw.split(/[\s,]+/).filter(Boolean).map(icao => icao.toUpperCase());
 
-        async function buscarHistoricoDiarioEGerarPDF() {
-            const icao = elements.historicalAerodromoInput.value.trim().toUpperCase();
-            const date = elements.historicalDateInput.value;
             const statusEl = elements.historicalSearchStatus;
             const buttonEl = elements.generateHistoricalReportBtn;
 
-            if (!/^[A-Z]{4}$/.test(icao) || !date) {
-                statusEl.textContent = 'Erro: Verifique o ICAO e a data selecionada.';
+            if (icaos.length === 0) {
+                statusEl.textContent = 'Erro: Insira pelo menos um código ICAO válido.';
                 statusEl.style.color = 'var(--alert-color)';
                 return;
             }
-            
-            buttonEl.disabled = true;
-            statusEl.textContent = 'Buscando dados...';
-            statusEl.style.color = 'var(--text-muted)';
-            
-            const data_ini = date.replace(/-/g, '') + '00';
-            const data_fim = date.replace(/-/g, '') + '23';
 
-            const url = `${CONFIG.apiUrl}?localidade=${icao}&data_ini=${data_ini}&data_fim=${data_fim}`;
-
-            try {
-                const response = await fetch(url, { cache: 'no-store' });
-                const data = await response.json();
-                
-                if (!response.ok) throw new Error(`Erro: ${data.message || response.statusText}`);
-                if (!data.status && data.message && !data.message.includes("data inicial ou final")) throw new Error(data.message);
-
-                let dadosParaRelatorio = (data.data && data.data.data && data.data.data.length > 0) ? data.data.data : [];
-
-                if (elements.filterInconsistent.checked) {
-                    dadosParaRelatorio = dadosParaRelatorio.filter(msg => isMessageInconsistent(msg));
-                }
-                
-                if (dadosParaRelatorio.length > 0) {
-                    statusEl.textContent = `Encontradas ${dadosParaRelatorio.length} mensagens. Gerando PDF...`;
-                    statusEl.style.color = 'var(--success-color)';
-                    gerarPDFHistorico(dadosParaRelatorio, icao, date, 'daily');
-                } else {
-                    const dataFormatada = new Date(date.replace(/-/g, '/')).toLocaleDateString();
-                    const msgText = elements.filterInconsistent.checked 
-                        ? `Nenhuma mensagem inconsistente encontrada para ${icao} na data ${dataFormatada}.`
-                        : `Nenhuma mensagem encontrada para ${icao} na data ${dataFormatada}.`;
-                    statusEl.textContent = msgText;
-                    statusEl.style.color = 'var(--warning-color)';
-                }
-            } catch (error) {
-                console.error("Erro na busca diária:", error);
-                statusEl.textContent = `Erro ao buscar dados: ${error.message}`;
-                statusEl.style.color = 'var(--alert-color)';
-            } finally {
-                buttonEl.disabled = false;
-            }
-        }
-        
-        async function buscarHistoricoMensalEGerarPDF() {
-            const icao = elements.historicalAerodromoInput.value.trim().toUpperCase();
-            const monthValue = elements.historicalMonthInput.value;
-            const statusEl = elements.historicalSearchStatus;
-            const buttonEl = elements.generateHistoricalReportBtn;
-
-            if (!/^[A-Z]{4}$/.test(icao) || !monthValue) {
-                statusEl.textContent = 'Erro: Verifique o ICAO e o Mês/Ano selecionado.';
+            const invalidIcaos = icaos.filter(icao => !/^[A-Z]{4}$/.test(icao));
+            if (invalidIcaos.length > 0) {
+                statusEl.textContent = `Erro: Códigos ICAO inválidos: ${invalidIcaos.join(', ')}.`;
                 statusEl.style.color = 'var(--alert-color)';
                 return;
             }
-            
+
             buttonEl.disabled = true;
             buttonEl.textContent = 'Buscando...';
-
-            const [year, month] = monthValue.split('-').map(Number);
-            const daysInMonth = new Date(year, month, 0).getDate();
+            statusEl.style.color = 'var(--text-muted)';
+            
             let todasAsMensagens = [];
-
+            const isDailySearch = elements.radioDiario.checked;
+            
             try {
-                for (let day = 1; day <= daysInMonth; day++) {
-                    const dayString = day.toString().padStart(2, '0');
-                    const monthString = month.toString().padStart(2, '0');
-                    const dateString = `${year}${monthString}${dayString}`;
+                for (const [index, icao] of icaos.entries()) {
+                    statusEl.textContent = `Buscando dados para ${icao} (${index + 1} de ${icaos.length})...`;
                     
-                    statusEl.textContent = `Buscando dados para o dia ${day} de ${daysInMonth}...`;
-                    statusEl.style.color = 'var(--text-muted)';
-
-                    const data_ini = dateString + '00';
-                    const data_fim = dateString + '23';
-                    
-                    const url = `${CONFIG.apiUrl}?localidade=${icao}&data_ini=${data_ini}&data_fim=${data_fim}`;
-
-                    const response = await fetch(url, { cache: 'no-store' });
-                    const data = await response.json();
-                    
-                    if (data.status && data.data && data.data.data && data.data.data.length > 0) {
-                        todasAsMensagens.push(...data.data.data);
+                    let mensagensDoIcao = [];
+                    if (isDailySearch) {
+                        mensagensDoIcao = await buscarDadosDiarios(icao);
+                    } else {
+                        mensagensDoIcao = await buscarDadosMensais(icao, icaos.length > 1);
                     }
-                    await new Promise(resolve => setTimeout(resolve, 200));
+                    
+                    // Adiciona o ICAO a cada objeto de mensagem para referência posterior
+                    mensagensDoIcao.forEach(msg => msg.icao = icao);
+                    todasAsMensagens.push(...mensagensDoIcao);
                 }
 
+                // Aplica filtros GLOBAIS após coletar todos os dados
                 let dadosParaRelatorio = todasAsMensagens;
+
+                if (elements.filterCor.checked) {
+                    dadosParaRelatorio = dadosParaRelatorio.filter(msg => !/^(METAR|SPECI)\sCOR/.test(msg.mens.trim()));
+                }
                 if (elements.filterInconsistent.checked) {
                     dadosParaRelatorio = dadosParaRelatorio.filter(msg => isMessageInconsistent(msg));
                 }
@@ -277,18 +240,15 @@
                 if (dadosParaRelatorio.length > 0) {
                     statusEl.textContent = `Total de ${dadosParaRelatorio.length} mensagens encontradas. Gerando PDF...`;
                     statusEl.style.color = 'var(--success-color)';
-                    gerarPDFHistorico(dadosParaRelatorio, icao, monthValue, 'monthly');
+                    const dateValue = isDailySearch ? elements.historicalDateInput.value : elements.historicalMonthInput.value;
+                    gerarPDFHistorico(dadosParaRelatorio, icaos, dateValue, isDailySearch ? 'daily' : 'monthly');
                 } else {
-                    const monthName = new Date(year, month - 1, 1).toLocaleString('pt-BR', { month: 'long' });
-                    const msgText = elements.filterInconsistent.checked
-                        ? `Nenhuma mensagem inconsistente encontrada para ${icao} em ${monthName} de ${year}.`
-                        : `Nenhuma mensagem encontrada para ${icao} em ${monthName} de ${year}.`;
-                    statusEl.textContent = msgText;
+                    statusEl.textContent = 'Nenhuma mensagem encontrada para os aeródromos e filtros aplicados.';
                     statusEl.style.color = 'var(--warning-color)';
                 }
 
             } catch (error) {
-                console.error("Erro na busca mensal:", error);
+                console.error("Erro na busca histórica:", error);
                 statusEl.textContent = `Erro ao buscar dados: ${error.message}`;
                 statusEl.style.color = 'var(--alert-color)';
             } finally {
@@ -297,9 +257,57 @@
             }
         }
         
-        // ==================================================================
-        // AQUI ESTÁ A FUNÇÃO ATUALIZADA
-        // ==================================================================
+        // NOVO: Função refatorada para buscar dados diários de UM ICAO
+        async function buscarDadosDiarios(icao) {
+            const date = elements.historicalDateInput.value;
+            if (!date) throw new Error("Data não selecionada.");
+
+            const data_ini = date.replace(/-/g, '') + '00';
+            const data_fim = date.replace(/-/g, '') + '23';
+            const url = `${CONFIG.apiUrl}?localidade=${icao}&data_ini=${data_ini}&data_fim=${data_fim}`;
+            
+            const response = await fetch(url, { cache: 'no-store' });
+            const data = await response.json();
+            
+            if (!response.ok) throw new Error(`[${icao}] Erro: ${data.message || response.statusText}`);
+            if (!data.status && data.message && !data.message.includes("data inicial ou final")) throw new Error(`[${icao}] ${data.message}`);
+
+            return (data.data && data.data.data) || [];
+        }
+
+        // NOVO: Função refatorada para buscar dados mensais de UM ICAO
+        async function buscarDadosMensais(icao, isMultiSearch) {
+            const monthValue = elements.historicalMonthInput.value;
+            if (!monthValue) throw new Error("Mês/Ano não selecionado.");
+            
+            const statusEl = elements.historicalSearchStatus;
+            const [year, month] = monthValue.split('-').map(Number);
+            const daysInMonth = new Date(year, month, 0).getDate();
+            let mensagensDoMes = [];
+
+            for (let day = 1; day <= daysInMonth; day++) {
+                if(isMultiSearch){ // Atualiza status por dia apenas se for busca múltipla para não poluir a tela
+                    statusEl.textContent = `Buscando dados para ${icao} - Dia ${day}/${daysInMonth}...`;
+                }
+
+                const dayString = day.toString().padStart(2, '0');
+                const monthString = month.toString().padStart(2, '0');
+                const dateString = `${year}${monthString}${dayString}`;
+                const data_ini = dateString + '00';
+                const data_fim = dateString + '23';
+                const url = `${CONFIG.apiUrl}?localidade=${icao}&data_ini=${data_ini}&data_fim=${data_fim}`;
+
+                const response = await fetch(url, { cache: 'no-store' });
+                const data = await response.json();
+
+                if (data.status && data.data && data.data.data) {
+                    mensagensDoMes.push(...data.data.data);
+                }
+                await new Promise(resolve => setTimeout(resolve, 150)); // Pequeno delay para não sobrecarregar a API
+            }
+            return mensagensDoMes;
+        }
+
         function isMessageInconsistent(msgObject) {
             const mensText = msgObject.mens || '';
             const recepcaoInfo = msgObject.timestamp || msgObject.recebimento;
@@ -317,23 +325,18 @@
             const msgDay = parseInt(match[1], 10);
             const msgHour = parseInt(match[2], 10);
             const msgMinute = parseInt(match[3], 10);
-
-            // --- LÓGICA CORRIGIDA PARA VIRADA DE DIA/MÊS/ANO ---
             
             const recepcaoYear = recepcaoDate.getUTCFullYear();
-            const recepcaoMonth = recepcaoDate.getUTCMonth(); // Mês em base 0 (Janeiro = 0)
+            const recepcaoMonth = recepcaoDate.getUTCMonth(); 
 
-            // Cria 3 datas candidatas para a mensagem, pois ela pode ser do mês anterior, atual ou seguinte
             const dateCurrentMonth = new Date(Date.UTC(recepcaoYear, recepcaoMonth, msgDay, msgHour, msgMinute));
             const datePreviousMonth = new Date(Date.UTC(recepcaoYear, recepcaoMonth - 1, msgDay, msgHour, msgMinute));
             const dateNextMonth = new Date(Date.UTC(recepcaoYear, recepcaoMonth + 1, msgDay, msgHour, msgMinute));
             
-            // Calcula a diferença de tempo absoluta entre a recepção e cada uma das datas candidatas
             const diffCurrent = Math.abs(recepcaoDate.getTime() - dateCurrentMonth.getTime());
             const diffPrevious = Math.abs(recepcaoDate.getTime() - datePreviousMonth.getTime());
             const diffNext = Math.abs(recepcaoDate.getTime() - dateNextMonth.getTime());
 
-            // A data correta da mensagem (bestMsgDate) é aquela com a menor diferença de tempo
             let bestMsgDate = dateCurrentMonth;
             if (diffPrevious < diffCurrent && diffPrevious < diffNext) {
                 bestMsgDate = datePreviousMonth;
@@ -341,53 +344,86 @@
                 bestMsgDate = dateNextMonth;
             }
             
-            // Calcula a diferença real em minutos usando a data correta
             const diffEmMinutos = (recepcaoDate.getTime() - bestMsgDate.getTime()) / (1000 * 60);
 
             const threshold = (tipo === 'METAR') ? 5 : 15;
-
-            // A inconsistência só ocorre se a mensagem estiver ATRASADA (diferença positiva) acima do limite.
-            // Mensagens adiantadas (diferença negativa) não são inconsistentes.
+            
             return diffEmMinutos > threshold;
         }
-
-        function gerarPDFHistorico(mensagens, icao, dateValue, type) {
+        
+        // MODIFICADO: Função de gerar PDF para lidar com múltiplos ICAOs
+        function gerarPDFHistorico(mensagens, icaos, dateValue, type) {
             const { jsPDF } = window.jspdf;
-            const doc = new jsPDF();
-            let title, filename;
             const isFiltered = elements.filterInconsistent.checked;
+            
+            const doc = new jsPDF({ orientation: isFiltered ? 'landscape' : 'portrait' });
+
+            let title, filename;
+            const icaosString = icaos.join('_');
+            const isMultiIcao = icaos.length > 1;
 
             if (type === 'daily') {
                 const dataFormatada = new Date(dateValue.replace(/-/g, '/')).toLocaleDateString('pt-BR');
-                title = isFiltered ? `Relatório de Inconsistências - ${icao} - ${dataFormatada}` : `Relatório Diário - ${icao} - ${dataFormatada}`;
-                filename = `relatorio_${isFiltered ? 'inconsistencias' : 'diario'}_${icao}_${dateValue}.pdf`;
+                title = `${isFiltered ? 'Rel. Inconsistências' : 'Rel. Diário'} - ${isMultiIcao ? 'Múltiplos Aeródromos' : icaos[0]} - ${dataFormatada}`;
+                filename = `relatorio_${isFiltered ? 'inconsistencias' : 'diario'}_${icaosString}_${dateValue}.pdf`;
             } else { // monthly
                 const [year, month] = dateValue.split('-');
                 const monthName = new Date(year, month - 1, 1).toLocaleString('pt-BR', { month: 'long' });
                 const formattedMonth = monthName.charAt(0).toUpperCase() + monthName.slice(1);
-                title = isFiltered ? `Relatório de Inconsistências - ${icao} - ${formattedMonth} de ${year}` : `Relatório Mensal - ${icao} - ${formattedMonth} de ${year}`;
-                filename = `relatorio_${isFiltered ? 'inconsistencias' : 'mensal'}_${icao}_${dateValue}.pdf`;
+                title = `${isFiltered ? 'Rel. Inconsistências' : 'Rel. Mensal'} - ${isMultiIcao ? 'Múltiplos Aeródromos' : icaos[0]} - ${formattedMonth} de ${year}`;
+                filename = `relatorio_${isFiltered ? 'inconsistencias' : 'mensal'}_${icaosString}_${dateValue}.pdf`;
             }
             
             doc.text(title, 14, 15);
             
-            const tableColumn = ["Tipo", "Hora UTC Msg", "Data Recebimento", "Hora Recebimento"];
+            // MODIFICADO: Adiciona a coluna "Aeródromo"
+            const tableColumn = ["Aeródromo", "Tipo", "Hora UTC Msg", "Data Recebimento", "Hora Recebimento"];
+            if (isFiltered) {
+                tableColumn.push("Mensagem");
+            }
             
             const dadosFormatados = mensagens.map(msg => {
-                const tipo = msg.mens.trim().startsWith('SPECI') ? 'SPECI' : 'METAR';
+                const msgTrimmed = msg.mens.trim();
+                let tipo = 'METAR';
+                if (msgTrimmed.startsWith('SPECI COR')) tipo = 'SPECI COR';
+                else if (msgTrimmed.startsWith('SPECI')) tipo = 'SPECI';
+                else if (msgTrimmed.startsWith('METAR COR')) tipo = 'METAR COR';
+                
                 const regex = /\s(\d{2})(\d{2})(\d{2})Z\s/;
                 const match = msg.mens.match(regex);
                 let horaUTC = "N/A";
                 if (match) {
                     horaUTC = `${match[2]}${match[3]}Z`;
                 }
-                return { mens: msg.mens, recebimento: msg.recebimento, tipo: tipo, timestamp: new Date(msg.recebimento), horaUTC: horaUTC };
-            }).sort((a,b) => a.timestamp - b.timestamp);
+                // Adiciona o ICAO ao objeto retornado
+                return { icao: msg.icao, mens: msg.mens, recebimento: msg.recebimento, tipo: tipo, timestamp: new Date(msg.recebimento), horaUTC: horaUTC };
+            }).sort((a,b) => {
+                // MODIFICADO: Ordena primeiro por ICAO, depois por data
+                if (a.icao < b.icao) return -1;
+                if (a.icao > b.icao) return 1;
+                return a.timestamp - b.timestamp;
+            });
 
-            const tableRows = dadosFormatados.map(d => [d.tipo, d.horaUTC, d.timestamp.toLocaleDateString('pt-BR'), d.timestamp.toLocaleTimeString('pt-BR')]);
+            const tableRows = dadosFormatados.map(d => {
+                // MODIFICADO: Adiciona o ICAO na linha da tabela
+                const row = [d.icao, d.tipo, d.horaUTC, d.timestamp.toLocaleDateString('pt-BR'), d.timestamp.toLocaleTimeString('pt-BR')];
+                if (isFiltered) {
+                    row.push(d.mens);
+                }
+                return row;
+            });
             
+            const columnStyles = {};
+            if (isFiltered) {
+                // Ajusta o índice da coluna da mensagem
+                columnStyles[5] = { cellWidth: 100 }; 
+            }
+
             doc.autoTable({
-                head: [tableColumn], body: tableRows, startY: 20,
+                head: [tableColumn], 
+                body: tableRows, 
+                startY: 20, // Posição inicial da tabela
+                columnStyles: columnStyles,
                 didParseCell: function(data) {
                     if (data.section === 'body') {
                         const originalData = dadosFormatados[data.row.index];
@@ -401,7 +437,6 @@
             doc.save(filename);
             elements.historicalSearchStatus.textContent = `Relatório gerado com sucesso!`;
         }
-
     </script>
 </body>
 </html>
