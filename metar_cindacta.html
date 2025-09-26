@@ -460,7 +460,7 @@
             });
         }
 
-        // MODIFICADO: Função de geração de PDF com as novas regras
+        // MODIFICADO: Função de geração de PDF com tabela de resumo ordenada e colorida
         function gerarPDFHistorico(mensagens, icaos, dateValue, type) {
             const { jsPDF } = window.jspdf;
             const isFilteredInconsistent = elements.filterInconsistent.checked;
@@ -473,26 +473,53 @@
             doc.text(title, 14, 15);
             
             const dadosFormatados = formatarDados(mensagens);
-            let tableStartY = 22; // Posição inicial da tabela
+            let tableStartY = 22;
 
-            // NOVO: Bloco para adicionar o resumo de inconsistências
+            // Bloco para adicionar o resumo de inconsistências
             if (isFilteredInconsistent) {
-                const inconsistenciasPorIcao = icaos.map(icao => {
+                // 1. Calcula as inconsistências e cria um array de objetos
+                const inconsistenciasData = icaos.map(icao => {
                     const count = dadosFormatados.filter(d => d.icao === icao && isMessageInconsistent(d)).length;
-                    return `${icao} (${count})`;
+                    return { icao: icao, count: count };
                 });
-                const summaryText = `Resumo de Inconsistências: ${inconsistenciasPorIcao.join(', ')}`;
-                doc.setFontSize(9);
-                doc.text(summaryText, 14, 21);
-                tableStartY = 28; // Desloca a tabela para baixo
+
+                // 2. Ordena os dados do menor para o maior número de inconsistências
+                inconsistenciasData.sort((a, b) => a.count - b.count);
+                
+                // 3. Prepara os dados para a autoTable
+                const summaryHead = [['Aeródromo', 'Inconsistências']];
+                const summaryBody = inconsistenciasData.map(item => [item.icao, item.count.toString()]);
+                
+                // 4. Gera a tabela de resumo com coloração condicional
+                doc.autoTable({
+                    head: summaryHead,
+                    body: summaryBody,
+                    startY: tableStartY,
+                    theme: 'grid',
+                    headStyles: { fillColor: [41, 128, 185], textColor: 255 },
+                    didParseCell: function(data) {
+                        if (data.section === 'body') {
+                            // Pega o dado original para a linha atual (já ordenado)
+                            const rowData = inconsistenciasData[data.row.index];
+                            if (rowData.count === 0) {
+                                data.cell.styles.fillColor = '#d4edda'; // Verde
+                            } else {
+                                data.cell.styles.fillColor = '#fff3cd'; // Amarelo
+                            }
+                        }
+                    }
+                });
+
+                // 5. Ajusta a posição de início da tabela principal
+                tableStartY = doc.lastAutoTable.finalY + 10; // Adiciona margem
             }
             
-            const tableColumn = ["Aeródromo", "Tipo", "Hora UTC Msg", "Data Recebimento", "Hora Recebimento"];
+            const mainTableColumn = ["Aeródromo", "Tipo", "Hora UTC Msg", "Data Recebimento", "Hora Recebimento"];
             if (isFilteredInconsistent) {
-                tableColumn.push("Mensagem");
+                mainTableColumn.push("Mensagem");
             }
             
-            const tableRows = dadosFormatados.map(d => {
+            const mainTableRows = dadosFormatados.map(d => {
                 const row = [d.icao, d.tipo, d.horaUTC, d.timestamp.toLocaleDateString('pt-BR'), d.timestamp.toLocaleTimeString('pt-BR')];
                 if (isFilteredInconsistent) {
                     row.push(d.mens);
@@ -506,8 +533,8 @@
             }
 
             doc.autoTable({
-                head: [tableColumn], 
-                body: tableRows, 
+                head: [mainTableColumn], 
+                body: mainTableRows, 
                 startY: tableStartY,
                 columnStyles: columnStyles,
                 didParseCell: function(data) {
@@ -569,7 +596,6 @@
             elements.historicalSearchStatus.textContent = `Relatório CSV gerado com sucesso!`;
         }
         
-        // MODIFICADO: Função de nomes de arquivo com a nova regra de título
         function gerarNomesArquivo(icaos, dateValue, type, extension) {
             const isFiltered = elements.filterInconsistent.checked;
             const icaosString = icaos.join('_');
@@ -585,14 +611,14 @@
             }
 
             if (type === 'daily') {
-                if (!title) { // Só define o título padrão se o título do CINDACTA não foi definido
+                if (!title) {
                     const dataFormatada = new Date(dateValue.replace(/-/g, '/')).toLocaleDateString('pt-BR');
                     const isMultiIcao = icaos.length > 1;
                     title = `${isFiltered ? 'Rel. Inconsistências' : 'Rel. Diário'} - ${isMultiIcao ? 'Múltiplos Aeródromos' : icaos[0]} - ${dataFormatada}`;
                 }
                 filename = `relatorio_${isFiltered ? 'inconsistencias' : 'diario'}_${icaosString}_${dateValue}.${extension}`;
-            } else { // monthly
-                 if (!title) { // Só define o título padrão se o título do CINDACTA não foi definido
+            } else {
+                 if (!title) {
                     const [year, month] = dateValue.split('-');
                     const monthName = new Date(year, month - 1, 1).toLocaleString('pt-BR', { month: 'long' });
                     const formattedMonth = monthName.charAt(0).toUpperCase() + monthName.slice(1);
