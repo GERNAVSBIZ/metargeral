@@ -388,7 +388,9 @@
             return mensagensDoMes;
         }
 
+        // FUNÇÃO ATUALIZADA COM A NOVA LÓGICA DE AUSÊNCIA
         function getMessageStatus(msgObject) {
+            // Passo 1: Coleta de dados essenciais
             const mensText = msgObject.mens || '';
             const recepcaoInfo = msgObject.timestamp || msgObject.recebimento;
             if (!mensText || !recepcaoInfo) return 'OK';
@@ -406,51 +408,49 @@
             const msgHour = parseInt(match[2], 10);
             const msgMinute = parseInt(match[3], 10);
             
+            // Passo 2: Determinar a data de geração mais provável
             const recepcaoYear = recepcaoDate.getUTCFullYear();
             const recepcaoMonth = recepcaoDate.getUTCMonth();
 
-            const candidateCurrentMonth = new Date(Date.UTC(recepcaoYear, recepcaoMonth, msgDay, msgHour, msgMinute));
-            const candidatePreviousMonth = new Date(Date.UTC(recepcaoYear, recepcaoMonth - 1, msgDay, msgHour, msgMinute));
-
-            const validCandidates = [];
-            if (candidateCurrentMonth <= recepcaoDate) {
-                validCandidates.push(candidateCurrentMonth);
-            }
-            if (candidatePreviousMonth <= recepcaoDate) {
-                validCandidates.push(candidatePreviousMonth);
-            }
-
-            if (validCandidates.length === 0) {
-                return 'OK';
-            }
-
-            let bestMsgDate = validCandidates[0];
-            if (validCandidates.length > 1) {
-                const diff1 = recepcaoDate.getTime() - validCandidates[0].getTime();
-                const diff2 = recepcaoDate.getTime() - validCandidates[1].getTime();
-                bestMsgDate = diff1 < diff2 ? validCandidates[0] : validCandidates[1];
-            }
+            const candidate1 = new Date(Date.UTC(recepcaoYear, recepcaoMonth, msgDay, msgHour, msgMinute));
+            const candidate2 = new Date(Date.UTC(recepcaoYear, recepcaoMonth - 1, msgDay, msgHour, msgMinute));
             
-            // REGRA ATUALIZADA: Verifica se a mensagem foi recebida no dia seguinte a partir de 0100Z
+            const diff1 = recepcaoDate.getTime() - candidate1.getTime();
+            const diff2 = recepcaoDate.getTime() - candidate2.getTime();
+
+            let bestMsgDate;
+            if (diff1 >= 0 && diff2 >= 0) {
+                bestMsgDate = diff1 < diff2 ? candidate1 : candidate2;
+            } else if (diff1 >= 0) {
+                bestMsgDate = candidate1;
+            } else if (diff2 >= 0) {
+                bestMsgDate = candidate2;
+            } else {
+                return 'OK'; // Ambas as datas candidatas estão no futuro, ignora.
+            }
+
+            // Passo 3: Aplicar as regras de classificação (LÓGICA CORRIGIDA)
+            // 3.1: Regra de AUSÊNCIA - mais específica
             const startOfMsgDay = new Date(bestMsgDate);
             startOfMsgDay.setUTCHours(0, 0, 0, 0);
 
-            const startOfRecepcaoDay = new Date(recepcaoDate);
-            startOfRecepcaoDay.setUTCHours(0, 0, 0, 0);
-            
-            if (startOfRecepcaoDay.getTime() > startOfMsgDay.getTime()) {
-                if (recepcaoDate.getUTCHours() >= 1) {
-                    return 'ABSENT';
-                }
-            }
-            
-            const diffEmMinutos = (recepcaoDate.getTime() - bestMsgDate.getTime()) / (1000 * 60);
+            // Calcula o momento exato do "limite de ausência": 01:00Z do dia seguinte
+            const absentThreshold = new Date(startOfMsgDay);
+            absentThreshold.setUTCDate(startOfMsgDay.getUTCDate() + 1);
+            absentThreshold.setUTCHours(1, 0, 0, 0);
 
+            if (recepcaoDate.getTime() >= absentThreshold.getTime()) {
+                return 'ABSENT';
+            }
+
+            // 3.2: Regra de ATRASO/INCONSISTÊNCIA
+            const diffEmMinutos = (recepcaoDate.getTime() - bestMsgDate.getTime()) / (1000 * 60);
             const threshold = (tipo === 'METAR') ? 5 : 15;
             if (diffEmMinutos > threshold) {
                 return tipo === 'METAR' ? 'INCONSISTENT_METAR' : 'INCONSISTENT_SPECI';
             }
             
+            // 3.3: Se não for ausente nem atrasado, está OK
             return 'OK';
         }
         
