@@ -303,12 +303,27 @@
                     todasAsMensagens.push(...mensagensDoIcao);
                 }
 
-                let dadosFiltrados = todasAsMensagens;
+                // --- NOVO PASSO DE FILTRAGEM PARA BUSCA DIÁRIA ---
+                let mensagensRelevantes = todasAsMensagens;
+                if (isDailySearch) {
+                    const dataSelecionadaUTC = new Date(elements.historicalDateInput.value + 'T00:00:00Z');
+                    const diaSelecionado = dataSelecionadaUTC.getUTCDate();
+                    
+                    mensagensRelevantes = todasAsMensagens.filter(msg => {
+                        const match = msg.mens.match(/\s(\d{2})(\d{2})(\d{2})Z\s/);
+                        if (!match) return false;
+                        
+                        const msgDay = parseInt(match[1], 10);
+                        return msgDay === diaSelecionado;
+                    });
+                }
+                // --- FIM DO NOVO PASSO ---
+
+                let dadosFiltrados = mensagensRelevantes;
                 if (elements.filterCor.checked) {
                     dadosFiltrados = dadosFiltrados.filter(msg => !/^(METAR|SPECI)\sCOR/.test(msg.mens.trim()));
                 }
                 if (elements.filterInconsistent.checked) {
-                    // MODIFICADO: Usa a nova função getMessageStatus para filtrar
                     dadosFiltrados = dadosFiltrados.filter(msg => getMessageStatus(msg) !== 'OK');
                 }
 
@@ -341,11 +356,27 @@
         }
         
         async function buscarDadosDiarios(icao) {
-            const date = elements.historicalDateInput.value;
-            if (!date) throw new Error("Data não selecionada.");
+            const dateStr = elements.historicalDateInput.value; // Data selecionada pelo usuário, ex: "2025-09-09"
+            if (!dateStr) throw new Error("Data não selecionada.");
 
-            const data_ini = date.replace(/-/g, '') + '00';
-            const data_fim = date.replace(/-/g, '') + '23';
+            // Cria um objeto Date para manipular. Adiciona 'T00:00:00Z' para evitar problemas de fuso horário.
+            const dataSelecionada = new Date(dateStr + 'T00:00:00Z');
+
+            // Adiciona um dia para obter o dia seguinte
+            const dataSeguinte = new Date(dataSelecionada);
+            dataSeguinte.setUTCDate(dataSelecionada.getUTCDate() + 1);
+
+            // Formata a data inicial (ex: "2025090900")
+            const data_ini = dateStr.replace(/-/g, '') + '00';
+            
+            // Formata a data do dia seguinte para o formato YYYYMMDD (ex: "20250910")
+            const anoFim = dataSeguinte.getUTCFullYear();
+            const mesFim = (dataSeguinte.getUTCMonth() + 1).toString().padStart(2, '0');
+            const diaFim = dataSeguinte.getUTCDate().toString().padStart(2, '0');
+
+            // MODIFICADO: A data final agora é o fim do dia seguinte (ex: "2025091023")
+            const data_fim = `${anoFim}${mesFim}${diaFim}23`;
+            
             const url = `${CONFIG.apiUrl}?localidade=${icao}&data_ini=${data_ini}&data_fim=${data_fim}`;
             
             const response = await fetch(url, { cache: 'no-store' });
@@ -389,13 +420,11 @@
             return mensagensDoMes;
         }
 
-        // FUNÇÃO CORRIGIDA
         function getMessageStatus(msgObject) {
             const mensText = msgObject.mens || '';
             const recepcaoInfo = msgObject.timestamp || msgObject.recebimento;
             if (!mensText || !recepcaoInfo) return 'OK';
 
-            // 1. Obter a data/hora de recebimento
             const recepcaoDate = new Date((typeof recepcaoInfo === 'string' ? recepcaoInfo.replace(' ', 'T') + 'Z' : recepcaoInfo));
             if (isNaN(recepcaoDate.getTime())) return 'OK';
 
@@ -405,7 +434,6 @@
             
             if (!match) return 'OK';
 
-            // 2. Obter a data/hora da mensagem
             const msgDay = parseInt(match[1], 10);
             const msgHour = parseInt(match[2], 10);
             const msgMinute = parseInt(match[3], 10);
@@ -413,7 +441,6 @@
             const recepcaoYear = recepcaoDate.getUTCFullYear();
             const recepcaoMonth = recepcaoDate.getUTCMonth(); 
 
-            // Lógica para construir a data da mensagem, tratando virada de mês
             const dateCurrentMonth = new Date(Date.UTC(recepcaoYear, recepcaoMonth, msgDay, msgHour, msgMinute));
             const datePreviousMonth = new Date(Date.UTC(recepcaoYear, recepcaoMonth - 1, msgDay, msgHour, msgMinute));
             const dateNextMonth = new Date(Date.UTC(recepcaoYear, recepcaoMonth + 1, msgDay, msgHour, msgMinute));
@@ -429,17 +456,13 @@
                 bestMsgDate = dateNextMonth;
             }
             
-            // --- NOVA LÓGICA PARA MENSAGEM AUSENTE ---
-            // Normaliza as datas para comparar apenas o dia do calendário (ignorando as horas)
             const msgCalendarDay = new Date(Date.UTC(bestMsgDate.getUTCFullYear(), bestMsgDate.getUTCMonth(), bestMsgDate.getUTCDate()));
             const recepcaoCalendarDay = new Date(Date.UTC(recepcaoDate.getUTCFullYear(), recepcaoDate.getUTCMonth(), recepcaoDate.getUTCDate()));
             
-            // Verifica se o recebimento ocorreu no dia seguinte E a partir de 01:00Z
             if (recepcaoCalendarDay > msgCalendarDay && recepcaoDate.getUTCHours() >= 1) {
                 return 'ABSENT';
             }
             
-            // --- LÓGICA DE INCONSISTÊNCIA (executada apenas se não for ausente) ---
             const diffEmMinutos = (recepcaoDate.getTime() - bestMsgDate.getTime()) / (1000 * 60);
             const threshold = (tipo === 'METAR') ? 5 : 15;
 
@@ -494,7 +517,6 @@
             let tableStartY = 22;
 
             if (isFilteredInconsistent) {
-                // 1. Calcula as inconsistências por tipo para cada aeródromo
                 const inconsistenciasData = icaos.map(icao => {
                     const counts = { metar: 0, speci: 0, absent: 0 };
                     dadosFormatados
@@ -511,10 +533,8 @@
                     return { icao: icao, ...counts, total };
                 });
 
-                // 2. Ordena pelo total de inconsistências
                 inconsistenciasData.sort((a, b) => a.total - b.total);
                 
-                // 3. Prepara os dados para a tabela de resumo
                 const summaryHead = [['Aeródromo', 'METAR', 'SPECI', 'Ausente', 'Total']];
                 const summaryBody = inconsistenciasData.map(item => [
                     item.icao, 
@@ -524,7 +544,6 @@
                     item.total.toString()
                 ]);
                 
-                // 4. Gera a tabela de resumo com coloração baseada no total
                 doc.autoTable({
                     head: summaryHead,
                     body: summaryBody,
@@ -535,9 +554,9 @@
                         if (data.section === 'body') {
                             const rowData = inconsistenciasData[data.row.index];
                             if (rowData.total === 0) {
-                                data.cell.styles.fillColor = '#d4edda'; // Verde
+                                data.cell.styles.fillColor = '#d4edda';
                             } else {
-                                data.cell.styles.fillColor = '#fff3cd'; // Amarelo
+                                data.cell.styles.fillColor = '#fff3cd';
                             }
                         }
                     }
