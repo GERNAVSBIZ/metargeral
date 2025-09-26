@@ -383,12 +383,11 @@
                 if (data.status && data.data && data.data.data) {
                     mensagensDoMes.push(...data.data.data);
                 }
-                await new Promise(resolve => setTimeout(resolve, 50)); // Reduzido o delay
+                await new Promise(resolve => setTimeout(resolve, 50));
             }
             return mensagensDoMes;
         }
 
-        // MODIFICADO: Lógica de status da mensagem mais precisa
         function getMessageStatus(msgObject) {
             const mensText = msgObject.mens || '';
             const recepcaoInfo = msgObject.timestamp || msgObject.recebimento;
@@ -410,11 +409,9 @@
             const recepcaoYear = recepcaoDate.getUTCFullYear();
             const recepcaoMonth = recepcaoDate.getUTCMonth();
 
-            // Cria duas datas candidatas para a mensagem: uma no mês atual e outra no mês anterior.
             const candidateCurrentMonth = new Date(Date.UTC(recepcaoYear, recepcaoMonth, msgDay, msgHour, msgMinute));
             const candidatePreviousMonth = new Date(Date.UTC(recepcaoYear, recepcaoMonth - 1, msgDay, msgHour, msgMinute));
 
-            // Filtra as candidatas que são do "futuro" (posteriores à data de recebimento).
             const validCandidates = [];
             if (candidateCurrentMonth <= recepcaoDate) {
                 validCandidates.push(candidateCurrentMonth);
@@ -424,10 +421,9 @@
             }
 
             if (validCandidates.length === 0) {
-                return 'OK'; // Caso anômalo, trata como OK.
+                return 'OK';
             }
 
-            // Das candidatas válidas, escolhe a mais próxima da data de recebimento.
             let bestMsgDate = validCandidates[0];
             if (validCandidates.length > 1) {
                 const diff1 = recepcaoDate.getTime() - validCandidates[0].getTime();
@@ -437,8 +433,7 @@
             
             const diffEmMinutos = (recepcaoDate.getTime() - bestMsgDate.getTime()) / (1000 * 60);
 
-            // REGRA ATUALIZADA: Atraso > 23 horas (1380 minutos) é considerado AUSENTE.
-            if (diffEmMinutos > 1380) { 
+            if (diffEmMinutos > 1380) { // Maior que 23 horas
                 return 'ABSENT';
             }
 
@@ -542,13 +537,14 @@
                 tableStartY = doc.lastAutoTable.finalY + 10;
             }
             
-            const mainTableColumn = ["Aeródromo", "Tipo", "Hora UTC Msg", "Data Recebimento", "Hora Recebimento"];
+            const mainTableColumn = ["Aeródromo", "Tipo", "Hora UTC Msg", "Data/Hora Recebimento"];
             if (isFilteredInconsistent) {
                 mainTableColumn.push("Mensagem");
             }
             
             const mainTableRows = dadosFormatados.map(d => {
-                const row = [d.icao, d.tipo, d.horaUTC, d.timestamp.toLocaleDateString('pt-BR'), d.timestamp.toLocaleTimeString('pt-BR')];
+                const formattedTimestamp = d.timestamp.toLocaleString('pt-BR', { timeZone: 'UTC' }).replace(',', '');
+                const row = [d.icao, d.tipo, d.horaUTC, formattedTimestamp];
                 if (isFilteredInconsistent) {
                     row.push(d.mens);
                 }
@@ -557,7 +553,7 @@
             
             const columnStyles = {};
             if (isFilteredInconsistent) {
-                columnStyles[5] = { cellWidth: 100 }; 
+                columnStyles[4] = { cellWidth: 100 }; 
             }
 
             doc.autoTable({
@@ -583,7 +579,7 @@
             const dadosFormatados = formatarDados(mensagens);
             const { filename } = gerarNomesArquivo(icaos, dateValue, type, 'csv');
 
-            const header = ["Aerodromo", "Tipo", "Hora_UTC_Msg", "Data_Recebimento", "Hora_Recebimento", "Status_Inconsistencia", "Mensagem_Completa"];
+            const header = ["Aerodromo", "Tipo", "Hora_UTC_Msg", "Data_Hora_Recebimento", "Status_Inconsistencia", "Mensagem_Completa"];
             
             const csvRows = [header.join(',')];
 
@@ -599,8 +595,7 @@
                     d.icao,
                     d.tipo,
                     d.horaUTC,
-                    d.timestamp.toLocaleDateString('pt-BR'),
-                    d.timestamp.toLocaleTimeString('pt-BR'),
+                    escapeCSV(d.timestamp.toLocaleString('pt-BR', { timeZone: 'UTC' })),
                     getMessageStatus(d),
                     escapeCSV(d.mens.trim())
                 ];
@@ -661,3 +656,4 @@
     </script>
 </body>
 </html>
+
