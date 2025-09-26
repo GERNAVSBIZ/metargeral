@@ -265,7 +265,6 @@
             }
         }
         
-        // MODIFICADO: Função principal para orquestrar a busca e a geração de relatórios
         async function iniciarBuscaHistorica() {
             const icaoCodesRaw = elements.historicalAerodromoInput.value.trim();
             const icaos = icaoCodesRaw.split(/[\s,]+/).filter(Boolean).map(icao => icao.toUpperCase());
@@ -309,7 +308,7 @@
                     dadosFiltrados = dadosFiltrados.filter(msg => !/^(METAR|SPECI)\sCOR/.test(msg.mens.trim()));
                 }
                 if (elements.filterInconsistent.checked) {
-                    dadosFiltrados = dadosFiltrados.filter(msg => isMessageInconsistent(msg));
+                    dadosFiltrados = dadosFiltrados.filter(msg => getMessageStatus(msg) !== 'OK');
                 }
 
                 if (dadosFiltrados.length > 0) {
@@ -320,7 +319,6 @@
                     const dateValue = isDailySearch ? elements.historicalDateInput.value : elements.historicalMonthInput.value;
                     const reportType = isDailySearch ? 'daily' : 'monthly';
 
-                    // MODIFICADO: Lógica para chamar a função de geração correta
                     if (selectedFormat === 'pdf') {
                         gerarPDFHistorico(dadosFiltrados, icaos, dateValue, reportType);
                     } else {
@@ -385,52 +383,71 @@
                 if (data.status && data.data && data.data.data) {
                     mensagensDoMes.push(...data.data.data);
                 }
-                await new Promise(resolve => setTimeout(resolve, 150));
+                await new Promise(resolve => setTimeout(resolve, 50)); // Reduzido o delay
             }
             return mensagensDoMes;
         }
 
-        function isMessageInconsistent(msgObject) {
+        // MODIFICADO: Lógica de status da mensagem mais precisa
+        function getMessageStatus(msgObject) {
             const mensText = msgObject.mens || '';
             const recepcaoInfo = msgObject.timestamp || msgObject.recebimento;
-            if (!mensText || !recepcaoInfo) return false;
+            if (!mensText || !recepcaoInfo) return 'OK';
 
             const recepcaoDate = new Date((typeof recepcaoInfo === 'string' ? recepcaoInfo.replace(' ', 'T') + 'Z' : recepcaoInfo));
-            if (isNaN(recepcaoDate.getTime())) return false;
+            if (isNaN(recepcaoDate.getTime())) return 'OK';
 
             const tipo = mensText.trim().startsWith('SPECI') ? 'SPECI' : 'METAR';
             const regex = /\s(\d{2})(\d{2})(\d{2})Z\s/;
             const match = mensText.match(regex);
             
-            if (!match) return false;
+            if (!match) return 'OK';
 
             const msgDay = parseInt(match[1], 10);
             const msgHour = parseInt(match[2], 10);
             const msgMinute = parseInt(match[3], 10);
             
             const recepcaoYear = recepcaoDate.getUTCFullYear();
-            const recepcaoMonth = recepcaoDate.getUTCMonth(); 
+            const recepcaoMonth = recepcaoDate.getUTCMonth();
 
-            const dateCurrentMonth = new Date(Date.UTC(recepcaoYear, recepcaoMonth, msgDay, msgHour, msgMinute));
-            const datePreviousMonth = new Date(Date.UTC(recepcaoYear, recepcaoMonth - 1, msgDay, msgHour, msgMinute));
-            const dateNextMonth = new Date(Date.UTC(recepcaoYear, recepcaoMonth + 1, msgDay, msgHour, msgMinute));
-            
-            const diffCurrent = Math.abs(recepcaoDate.getTime() - dateCurrentMonth.getTime());
-            const diffPrevious = Math.abs(recepcaoDate.getTime() - datePreviousMonth.getTime());
-            const diffNext = Math.abs(recepcaoDate.getTime() - dateNextMonth.getTime());
+            // Cria duas datas candidatas para a mensagem: uma no mês atual e outra no mês anterior.
+            const candidateCurrentMonth = new Date(Date.UTC(recepcaoYear, recepcaoMonth, msgDay, msgHour, msgMinute));
+            const candidatePreviousMonth = new Date(Date.UTC(recepcaoYear, recepcaoMonth - 1, msgDay, msgHour, msgMinute));
 
-            let bestMsgDate = dateCurrentMonth;
-            if (diffPrevious < diffCurrent && diffPrevious < diffNext) {
-                bestMsgDate = datePreviousMonth;
-            } else if (diffNext < diffCurrent && diffNext < diffPrevious) {
-                bestMsgDate = dateNextMonth;
+            // Filtra as candidatas que são do "futuro" (posteriores à data de recebimento).
+            const validCandidates = [];
+            if (candidateCurrentMonth <= recepcaoDate) {
+                validCandidates.push(candidateCurrentMonth);
+            }
+            if (candidatePreviousMonth <= recepcaoDate) {
+                validCandidates.push(candidatePreviousMonth);
+            }
+
+            if (validCandidates.length === 0) {
+                return 'OK'; // Caso anômalo, trata como OK.
+            }
+
+            // Das candidatas válidas, escolhe a mais próxima da data de recebimento.
+            let bestMsgDate = validCandidates[0];
+            if (validCandidates.length > 1) {
+                const diff1 = recepcaoDate.getTime() - validCandidates[0].getTime();
+                const diff2 = recepcaoDate.getTime() - validCandidates[1].getTime();
+                bestMsgDate = diff1 < diff2 ? validCandidates[0] : validCandidates[1];
             }
             
             const diffEmMinutos = (recepcaoDate.getTime() - bestMsgDate.getTime()) / (1000 * 60);
 
+            // REGRA ATUALIZADA: Atraso > 23 horas (1380 minutos) é considerado AUSENTE.
+            if (diffEmMinutos > 1380) { 
+                return 'ABSENT';
+            }
+
             const threshold = (tipo === 'METAR') ? 5 : 15;
+            if (diffEmMinutos > threshold) {
+                return tipo === 'METAR' ? 'INCONSISTENT_METAR' : 'INCONSISTENT_SPECI';
+            }
             
-            return diffEmMinutos > threshold;
+            return 'OK';
         }
         
         function formatarDados(mensagens) {
@@ -464,44 +481,94 @@
 
         function gerarPDFHistorico(mensagens, icaos, dateValue, type) {
             const { jsPDF } = window.jspdf;
-            const isFiltered = elements.filterInconsistent.checked;
+            const isFilteredInconsistent = elements.filterInconsistent.checked;
             
-            const doc = new jsPDF({ orientation: isFiltered ? 'landscape' : 'portrait' });
-
-            const isMultiIcao = icaos.length > 1;
+            const doc = new jsPDF({ orientation: isFilteredInconsistent ? 'landscape' : 'portrait' });
+            
             const { title, filename } = gerarNomesArquivo(icaos, dateValue, type, 'pdf');
             
+            doc.setFontSize(16);
             doc.text(title, 14, 15);
             
-            const tableColumn = ["Aeródromo", "Tipo", "Hora UTC Msg", "Data Recebimento", "Hora Recebimento"];
-            if (isFiltered) {
-                tableColumn.push("Mensagem");
-            }
-
             const dadosFormatados = formatarDados(mensagens);
+            let tableStartY = 22;
+
+            if (isFilteredInconsistent) {
+                const inconsistenciasData = icaos.map(icao => {
+                    const counts = { metar: 0, speci: 0, absent: 0 };
+                    dadosFormatados
+                        .filter(d => d.icao === icao)
+                        .forEach(d => {
+                            const status = getMessageStatus(d);
+                            switch (status) {
+                                case 'INCONSISTENT_METAR': counts.metar++; break;
+                                case 'INCONSISTENT_SPECI': counts.speci++; break;
+                                case 'ABSENT': counts.absent++; break;
+                            }
+                        });
+                    const total = counts.metar + counts.speci + counts.absent;
+                    return { icao: icao, ...counts, total };
+                });
+
+                inconsistenciasData.sort((a, b) => a.total - b.total);
+                
+                const summaryHead = [['Aeródromo', 'METAR', 'SPECI', 'Ausente', 'Total']];
+                const summaryBody = inconsistenciasData.map(item => [
+                    item.icao, 
+                    item.metar.toString(), 
+                    item.speci.toString(), 
+                    item.absent.toString(), 
+                    item.total.toString()
+                ]);
+                
+                doc.autoTable({
+                    head: summaryHead,
+                    body: summaryBody,
+                    startY: tableStartY,
+                    theme: 'grid',
+                    headStyles: { fillColor: [41, 128, 185], textColor: 255 },
+                    didParseCell: function(data) {
+                        if (data.section === 'body') {
+                            const rowData = inconsistenciasData[data.row.index];
+                            if (rowData.total === 0) {
+                                data.cell.styles.fillColor = '#d4edda'; // Verde
+                            } else {
+                                data.cell.styles.fillColor = '#fff3cd'; // Amarelo
+                            }
+                        }
+                    }
+                });
+
+                tableStartY = doc.lastAutoTable.finalY + 10;
+            }
             
-            const tableRows = dadosFormatados.map(d => {
+            const mainTableColumn = ["Aeródromo", "Tipo", "Hora UTC Msg", "Data Recebimento", "Hora Recebimento"];
+            if (isFilteredInconsistent) {
+                mainTableColumn.push("Mensagem");
+            }
+            
+            const mainTableRows = dadosFormatados.map(d => {
                 const row = [d.icao, d.tipo, d.horaUTC, d.timestamp.toLocaleDateString('pt-BR'), d.timestamp.toLocaleTimeString('pt-BR')];
-                if (isFiltered) {
+                if (isFilteredInconsistent) {
                     row.push(d.mens);
                 }
                 return row;
             });
             
             const columnStyles = {};
-            if (isFiltered) {
+            if (isFilteredInconsistent) {
                 columnStyles[5] = { cellWidth: 100 }; 
             }
 
             doc.autoTable({
-                head: [tableColumn], 
-                body: tableRows, 
-                startY: 20,
+                head: [mainTableColumn], 
+                body: mainTableRows, 
+                startY: tableStartY,
                 columnStyles: columnStyles,
                 didParseCell: function(data) {
                     if (data.section === 'body') {
                         const originalData = dadosFormatados[data.row.index];
-                        if (isMessageInconsistent(originalData)) {
+                        if (getMessageStatus(originalData) !== 'OK') {
                              data.cell.styles.textColor = [239, 68, 68];
                         }
                     }
@@ -512,20 +579,19 @@
             elements.historicalSearchStatus.textContent = `Relatório PDF gerado com sucesso!`;
         }
 
-        // NOVO: Função para gerar o relatório em CSV
         function gerarCSVHistorico(mensagens, icaos, dateValue, type) {
             const dadosFormatados = formatarDados(mensagens);
             const { filename } = gerarNomesArquivo(icaos, dateValue, type, 'csv');
 
-            const header = ["Aerodromo", "Tipo", "Hora_UTC_Msg", "Data_Recebimento", "Hora_Recebimento", "Inconsistente", "Mensagem_Completa"];
+            const header = ["Aerodromo", "Tipo", "Hora_UTC_Msg", "Data_Recebimento", "Hora_Recebimento", "Status_Inconsistencia", "Mensagem_Completa"];
             
-            const csvRows = [header.join(',')]; // Inicia o array de linhas com o cabeçalho
+            const csvRows = [header.join(',')];
 
             const escapeCSV = (str) => {
-                if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+                if (str && (str.includes(',') || str.includes('"') || str.includes('\n'))) {
                     return `"${str.replace(/"/g, '""')}"`;
                 }
-                return str;
+                return str || '';
             };
 
             for (const d of dadosFormatados) {
@@ -535,14 +601,14 @@
                     d.horaUTC,
                     d.timestamp.toLocaleDateString('pt-BR'),
                     d.timestamp.toLocaleTimeString('pt-BR'),
-                    isMessageInconsistent(d) ? 'SIM' : 'NAO',
+                    getMessageStatus(d),
                     escapeCSV(d.mens.trim())
                 ];
                 csvRows.push(row.join(','));
             }
 
             const csvContent = csvRows.join('\n');
-            const blob = new Blob([`\uFEFF${csvContent}`], { type: 'text/csv;charset=utf-8;' }); // \uFEFF for BOM/UTF-8 Excel compatibility
+            const blob = new Blob([`\uFEFF${csvContent}`], { type: 'text/csv;charset=utf-8;' });
 
             const link = document.createElement("a");
             if (link.download !== undefined) {
@@ -558,22 +624,35 @@
             elements.historicalSearchStatus.textContent = `Relatório CSV gerado com sucesso!`;
         }
         
-        // NOVO: Função auxiliar para gerar nomes de arquivo e títulos
         function gerarNomesArquivo(icaos, dateValue, type, extension) {
             const isFiltered = elements.filterInconsistent.checked;
             const icaosString = icaos.join('_');
-            const isMultiIcao = icaos.length > 1;
             let title, filename;
+            
+            const activeButton = document.querySelector('.cinda-selector button.active');
+            
+            if (activeButton) {
+                const romanMap = { '1': 'I', '2': 'II', '3': 'III', '4': 'IV' };
+                const cindaId = activeButton.dataset.cinda;
+                const romanNumeral = romanMap[cindaId];
+                title = `MENSAGENS AUSENTES OU INCLUÍDAS COM ATRASO - CINDACTA ${romanNumeral}`;
+            }
 
             if (type === 'daily') {
-                const dataFormatada = new Date(dateValue.replace(/-/g, '/')).toLocaleDateString('pt-BR');
-                title = `${isFiltered ? 'Rel. Inconsistências' : 'Rel. Diário'} - ${isMultiIcao ? 'Múltiplos Aeródromos' : icaos[0]} - ${dataFormatada}`;
+                if (!title) {
+                    const dataFormatada = new Date(dateValue.replace(/-/g, '/')).toLocaleDateString('pt-BR', {timeZone: 'UTC'});
+                    const isMultiIcao = icaos.length > 1;
+                    title = `${isFiltered ? 'Rel. Inconsistências' : 'Rel. Diário'} - ${isMultiIcao ? 'Múltiplos Aeródromos' : icaos[0]} - ${dataFormatada}`;
+                }
                 filename = `relatorio_${isFiltered ? 'inconsistencias' : 'diario'}_${icaosString}_${dateValue}.${extension}`;
-            } else { // monthly
-                const [year, month] = dateValue.split('-');
-                const monthName = new Date(year, month - 1, 1).toLocaleString('pt-BR', { month: 'long' });
-                const formattedMonth = monthName.charAt(0).toUpperCase() + monthName.slice(1);
-                title = `${isFiltered ? 'Rel. Inconsistências' : 'Rel. Mensal'} - ${isMultiIcao ? 'Múltiplos Aeródromos' : icaos[0]} - ${formattedMonth} de ${year}`;
+            } else {
+                 if (!title) {
+                    const [year, month] = dateValue.split('-');
+                    const monthName = new Date(year, month - 1, 1).toLocaleString('pt-BR', { month: 'long' });
+                    const formattedMonth = monthName.charAt(0).toUpperCase() + monthName.slice(1);
+                    const isMultiIcao = icaos.length > 1;
+                    title = `${isFiltered ? 'Rel. Inconsistências' : 'Rel. Mensal'} - ${isMultiIcao ? 'Múltiplos Aeródromos' : icaos[0]} - ${formattedMonth} de ${year}`;
+                }
                 filename = `relatorio_${isFiltered ? 'inconsistencias' : 'mensal'}_${icaosString}_${dateValue}.${extension}`;
             }
             return { title, filename };
