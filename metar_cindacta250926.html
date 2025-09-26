@@ -431,11 +431,20 @@
                 bestMsgDate = diff1 < diff2 ? validCandidates[0] : validCandidates[1];
             }
             
-            const diffEmMinutos = (recepcaoDate.getTime() - bestMsgDate.getTime()) / (1000 * 60);
+            // REGRA ATUALIZADA: Verifica se a mensagem foi recebida no dia seguinte a partir de 0100Z
+            const startOfMsgDay = new Date(bestMsgDate);
+            startOfMsgDay.setUTCHours(0, 0, 0, 0);
 
-            if (diffEmMinutos > 1380) { // Maior que 23 horas
-                return 'ABSENT';
+            const startOfRecepcaoDay = new Date(recepcaoDate);
+            startOfRecepcaoDay.setUTCHours(0, 0, 0, 0);
+            
+            if (startOfRecepcaoDay.getTime() > startOfMsgDay.getTime()) {
+                if (recepcaoDate.getUTCHours() >= 1) {
+                    return 'ABSENT';
+                }
             }
+            
+            const diffEmMinutos = (recepcaoDate.getTime() - bestMsgDate.getTime()) / (1000 * 60);
 
             const threshold = (tipo === 'METAR') ? 5 : 15;
             if (diffEmMinutos > threshold) {
