@@ -83,11 +83,10 @@
         .search-controls button:hover { background: var(--primary-light); }
         .search-controls button:disabled { background: var(--text-muted); cursor: not-allowed; }
         #historicalSearchStatus { margin-top: 16px; font-weight: 500; }
-        .search-type-selector { margin-bottom: 16px; display: flex; gap: 16px; align-items: center; font-weight: 500;}
+        .search-type-selector, .report-format-selector { margin-bottom: 16px; display: flex; gap: 16px; align-items: center; font-weight: 500;}
         .search-filters { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
         .hidden { display: none; }
 
-        /* NOVO: Estilos para os botões CINDACTA */
         .cinda-selector {
             margin-bottom: 24px;
             display: flex;
@@ -156,6 +155,12 @@
                 <label><input type="checkbox" id="filterCor"> Ignorar mensagens corrigidas (COR)</label>
             </div>
 
+            <div class="report-format-selector">
+                <strong>Formato do Relatório:</strong>
+                <label><input type="radio" name="reportFormat" value="pdf" checked> PDF</label>
+                <label><input type="radio" name="reportFormat" value="csv"> CSV</label>
+            </div>
+
             <div class="search-controls">
                 <div>
                     <label for="historicalAerodromoInput">Códigos ICAO:</label>
@@ -188,7 +193,6 @@
             apiUrl: '/api/metaradm' 
         };
 
-        // NOVO: Definição das listas de aeródromos por CINDACTA
         const CINDACTA_AERODROMES = {
             '1': ['SBBH', 'SBBU', 'SBBW', 'SBGO', 'SBMK', 'SBPJ', 'SBRP', 'SBUL', 'SBUR'],
             '2': ['SBBG', 'SBCP', 'SBDN', 'SBJV', 'SBLO', 'SBME', 'SBNF', 'SBPK', 'SBPP'],
@@ -208,7 +212,6 @@
             monthlyInputContainer: document.getElementById('monthlyInputContainer'),
             filterInconsistent: document.getElementById('filterInconsistent'),
             filterCor: document.getElementById('filterCor'),
-            // NOVO: Elementos para a funcionalidade CINDACTA
             cindaSelectorContainer: document.getElementById('cindaSelectorContainer'),
             clearCindaSelectionBtn: document.getElementById('clearCindaSelectionBtn')
         };
@@ -216,7 +219,6 @@
         document.addEventListener('DOMContentLoaded', inicializarApp);
 
         function inicializarApp() {
-            // Removida a inicialização com valores padrão para o textarea
             elements.historicalDateInput.valueAsDate = new Date();
             const today = new Date();
             const year = today.getFullYear();
@@ -226,33 +228,27 @@
             elements.radioDiario.addEventListener('change', toggleSearchType);
             elements.radioMensal.addEventListener('change', toggleSearchType);
             elements.generateHistoricalReportBtn.addEventListener('click', iniciarBuscaHistorica);
-            // NOVO: Listeners para os botões CINDACTA
             elements.cindaSelectorContainer.addEventListener('click', handleCindaSelection);
             elements.clearCindaSelectionBtn.addEventListener('click', clearCindaSelection);
         }
 
-        // NOVO: Função para lidar com a seleção de CINDACTA
         function handleCindaSelection(event) {
             const target = event.target;
             if (target.tagName !== 'BUTTON' || !target.dataset.cinda) {
-                return; // Ignora cliques que não são nos botões de CINDACTA
+                return;
             }
 
             const cindaId = target.dataset.cinda;
             const aerodromes = CINDACTA_AERODROMES[cindaId];
 
             if (aerodromes) {
-                // Atualiza o textarea
                 elements.historicalAerodromoInput.value = aerodromes.join('\n');
-                
-                // Atualiza o estilo dos botões
                 const allCindaButtons = elements.cindaSelectorContainer.querySelectorAll('button[data-cinda]');
                 allCindaButtons.forEach(btn => btn.classList.remove('active'));
                 target.classList.add('active');
             }
         }
 
-        // NOVO: Função para limpar a seleção de CINDACTA
         function clearCindaSelection() {
             elements.historicalAerodromoInput.value = '';
             const allCindaButtons = elements.cindaSelectorContainer.querySelectorAll('button[data-cinda]');
@@ -269,6 +265,7 @@
             }
         }
         
+        // MODIFICADO: Função principal para orquestrar a busca e a geração de relatórios
         async function iniciarBuscaHistorica() {
             const icaoCodesRaw = elements.historicalAerodromoInput.value.trim();
             const icaos = icaoCodesRaw.split(/[\s,]+/).filter(Boolean).map(icao => icao.toUpperCase());
@@ -299,32 +296,36 @@
             try {
                 for (const [index, icao] of icaos.entries()) {
                     statusEl.textContent = `Buscando dados para ${icao} (${index + 1} de ${icaos.length})...`;
-                    
-                    let mensagensDoIcao = [];
-                    if (isDailySearch) {
-                        mensagensDoIcao = await buscarDadosDiarios(icao);
-                    } else {
-                        mensagensDoIcao = await buscarDadosMensais(icao, icaos.length > 1);
-                    }
+                    let mensagensDoIcao = isDailySearch 
+                        ? await buscarDadosDiarios(icao) 
+                        : await buscarDadosMensais(icao, icaos.length > 1);
                     
                     mensagensDoIcao.forEach(msg => msg.icao = icao);
                     todasAsMensagens.push(...mensagensDoIcao);
                 }
 
-                let dadosParaRelatorio = todasAsMensagens;
-
+                let dadosFiltrados = todasAsMensagens;
                 if (elements.filterCor.checked) {
-                    dadosParaRelatorio = dadosParaRelatorio.filter(msg => !/^(METAR|SPECI)\sCOR/.test(msg.mens.trim()));
+                    dadosFiltrados = dadosFiltrados.filter(msg => !/^(METAR|SPECI)\sCOR/.test(msg.mens.trim()));
                 }
                 if (elements.filterInconsistent.checked) {
-                    dadosParaRelatorio = dadosParaRelatorio.filter(msg => isMessageInconsistent(msg));
+                    dadosFiltrados = dadosFiltrados.filter(msg => isMessageInconsistent(msg));
                 }
 
-                if (dadosParaRelatorio.length > 0) {
-                    statusEl.textContent = `Total de ${dadosParaRelatorio.length} mensagens encontradas. Gerando PDF...`;
+                if (dadosFiltrados.length > 0) {
+                    const selectedFormat = document.querySelector('input[name="reportFormat"]:checked').value;
+                    statusEl.textContent = `Total de ${dadosFiltrados.length} mensagens encontradas. Gerando ${selectedFormat.toUpperCase()}...`;
                     statusEl.style.color = 'var(--success-color)';
+                    
                     const dateValue = isDailySearch ? elements.historicalDateInput.value : elements.historicalMonthInput.value;
-                    gerarPDFHistorico(dadosParaRelatorio, icaos, dateValue, isDailySearch ? 'daily' : 'monthly');
+                    const reportType = isDailySearch ? 'daily' : 'monthly';
+
+                    // MODIFICADO: Lógica para chamar a função de geração correta
+                    if (selectedFormat === 'pdf') {
+                        gerarPDFHistorico(dadosFiltrados, icaos, dateValue, reportType);
+                    } else {
+                        gerarCSVHistorico(dadosFiltrados, icaos, dateValue, reportType);
+                    }
                 } else {
                     statusEl.textContent = 'Nenhuma mensagem encontrada para os aeródromos e filtros aplicados.';
                     statusEl.style.color = 'var(--warning-color)';
@@ -432,36 +433,8 @@
             return diffEmMinutos > threshold;
         }
         
-        function gerarPDFHistorico(mensagens, icaos, dateValue, type) {
-            const { jsPDF } = window.jspdf;
-            const isFiltered = elements.filterInconsistent.checked;
-            
-            const doc = new jsPDF({ orientation: isFiltered ? 'landscape' : 'portrait' });
-
-            let title, filename;
-            const icaosString = icaos.join('_');
-            const isMultiIcao = icaos.length > 1;
-
-            if (type === 'daily') {
-                const dataFormatada = new Date(dateValue.replace(/-/g, '/')).toLocaleDateString('pt-BR');
-                title = `${isFiltered ? 'Rel. Inconsistências' : 'Rel. Diário'} - ${isMultiIcao ? 'Múltiplos Aeródromos' : icaos[0]} - ${dataFormatada}`;
-                filename = `relatorio_${isFiltered ? 'inconsistencias' : 'diario'}_${icaosString}_${dateValue}.pdf`;
-            } else { // monthly
-                const [year, month] = dateValue.split('-');
-                const monthName = new Date(year, month - 1, 1).toLocaleString('pt-BR', { month: 'long' });
-                const formattedMonth = monthName.charAt(0).toUpperCase() + monthName.slice(1);
-                title = `${isFiltered ? 'Rel. Inconsistências' : 'Rel. Mensal'} - ${isMultiIcao ? 'Múltiplos Aeródromos' : icaos[0]} - ${formattedMonth} de ${year}`;
-                filename = `relatorio_${isFiltered ? 'inconsistencias' : 'mensal'}_${icaosString}_${dateValue}.pdf`;
-            }
-            
-            doc.text(title, 14, 15);
-            
-            const tableColumn = ["Aeródromo", "Tipo", "Hora UTC Msg", "Data Recebimento", "Hora Recebimento"];
-            if (isFiltered) {
-                tableColumn.push("Mensagem");
-            }
-            
-            const dadosFormatados = mensagens.map(msg => {
+        function formatarDados(mensagens) {
+            return mensagens.map(msg => {
                 const msgTrimmed = msg.mens.trim();
                 let tipo = 'METAR';
                 if (msgTrimmed.startsWith('SPECI COR')) tipo = 'SPECI COR';
@@ -474,13 +447,39 @@
                 if (match) {
                     horaUTC = `${match[2]}${match[3]}Z`;
                 }
-                return { icao: msg.icao, mens: msg.mens, recebimento: msg.recebimento, tipo: tipo, timestamp: new Date(msg.recebimento), horaUTC: horaUTC };
+                return { 
+                    icao: msg.icao, 
+                    mens: msg.mens, 
+                    recebimento: msg.recebimento, 
+                    tipo: tipo, 
+                    timestamp: new Date(msg.recebimento), 
+                    horaUTC: horaUTC 
+                };
             }).sort((a,b) => {
                 if (a.icao < b.icao) return -1;
                 if (a.icao > b.icao) return 1;
                 return a.timestamp - b.timestamp;
             });
+        }
 
+        function gerarPDFHistorico(mensagens, icaos, dateValue, type) {
+            const { jsPDF } = window.jspdf;
+            const isFiltered = elements.filterInconsistent.checked;
+            
+            const doc = new jsPDF({ orientation: isFiltered ? 'landscape' : 'portrait' });
+
+            const isMultiIcao = icaos.length > 1;
+            const { title, filename } = gerarNomesArquivo(icaos, dateValue, type, 'pdf');
+            
+            doc.text(title, 14, 15);
+            
+            const tableColumn = ["Aeródromo", "Tipo", "Hora UTC Msg", "Data Recebimento", "Hora Recebimento"];
+            if (isFiltered) {
+                tableColumn.push("Mensagem");
+            }
+
+            const dadosFormatados = formatarDados(mensagens);
+            
             const tableRows = dadosFormatados.map(d => {
                 const row = [d.icao, d.tipo, d.horaUTC, d.timestamp.toLocaleDateString('pt-BR'), d.timestamp.toLocaleTimeString('pt-BR')];
                 if (isFiltered) {
@@ -510,8 +509,76 @@
             });
             
             doc.save(filename);
-            elements.historicalSearchStatus.textContent = `Relatório gerado com sucesso!`;
+            elements.historicalSearchStatus.textContent = `Relatório PDF gerado com sucesso!`;
         }
+
+        // NOVO: Função para gerar o relatório em CSV
+        function gerarCSVHistorico(mensagens, icaos, dateValue, type) {
+            const dadosFormatados = formatarDados(mensagens);
+            const { filename } = gerarNomesArquivo(icaos, dateValue, type, 'csv');
+
+            const header = ["Aerodromo", "Tipo", "Hora_UTC_Msg", "Data_Recebimento", "Hora_Recebimento", "Inconsistente", "Mensagem_Completa"];
+            
+            const csvRows = [header.join(',')]; // Inicia o array de linhas com o cabeçalho
+
+            const escapeCSV = (str) => {
+                if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+                    return `"${str.replace(/"/g, '""')}"`;
+                }
+                return str;
+            };
+
+            for (const d of dadosFormatados) {
+                const row = [
+                    d.icao,
+                    d.tipo,
+                    d.horaUTC,
+                    d.timestamp.toLocaleDateString('pt-BR'),
+                    d.timestamp.toLocaleTimeString('pt-BR'),
+                    isMessageInconsistent(d) ? 'SIM' : 'NAO',
+                    escapeCSV(d.mens.trim())
+                ];
+                csvRows.push(row.join(','));
+            }
+
+            const csvContent = csvRows.join('\n');
+            const blob = new Blob([`\uFEFF${csvContent}`], { type: 'text/csv;charset=utf-8;' }); // \uFEFF for BOM/UTF-8 Excel compatibility
+
+            const link = document.createElement("a");
+            if (link.download !== undefined) {
+                const url = URL.createObjectURL(blob);
+                link.setAttribute("href", url);
+                link.setAttribute("download", filename);
+                link.style.visibility = 'hidden';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            }
+
+            elements.historicalSearchStatus.textContent = `Relatório CSV gerado com sucesso!`;
+        }
+        
+        // NOVO: Função auxiliar para gerar nomes de arquivo e títulos
+        function gerarNomesArquivo(icaos, dateValue, type, extension) {
+            const isFiltered = elements.filterInconsistent.checked;
+            const icaosString = icaos.join('_');
+            const isMultiIcao = icaos.length > 1;
+            let title, filename;
+
+            if (type === 'daily') {
+                const dataFormatada = new Date(dateValue.replace(/-/g, '/')).toLocaleDateString('pt-BR');
+                title = `${isFiltered ? 'Rel. Inconsistências' : 'Rel. Diário'} - ${isMultiIcao ? 'Múltiplos Aeródromos' : icaos[0]} - ${dataFormatada}`;
+                filename = `relatorio_${isFiltered ? 'inconsistencias' : 'diario'}_${icaosString}_${dateValue}.${extension}`;
+            } else { // monthly
+                const [year, month] = dateValue.split('-');
+                const monthName = new Date(year, month - 1, 1).toLocaleString('pt-BR', { month: 'long' });
+                const formattedMonth = monthName.charAt(0).toUpperCase() + monthName.slice(1);
+                title = `${isFiltered ? 'Rel. Inconsistências' : 'Rel. Mensal'} - ${isMultiIcao ? 'Múltiplos Aeródromos' : icaos[0]} - ${formattedMonth} de ${year}`;
+                filename = `relatorio_${isFiltered ? 'inconsistencias' : 'mensal'}_${icaosString}_${dateValue}.${extension}`;
+            }
+            return { title, filename };
+        }
+
     </script>
 </body>
 </html>
