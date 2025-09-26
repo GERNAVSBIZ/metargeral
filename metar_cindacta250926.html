@@ -308,6 +308,7 @@
                     dadosFiltrados = dadosFiltrados.filter(msg => !/^(METAR|SPECI)\sCOR/.test(msg.mens.trim()));
                 }
                 if (elements.filterInconsistent.checked) {
+                    // MODIFICADO: Usa a nova função getMessageStatus para filtrar
                     dadosFiltrados = dadosFiltrados.filter(msg => getMessageStatus(msg) !== 'OK');
                 }
 
@@ -383,18 +384,18 @@
                 if (data.status && data.data && data.data.data) {
                     mensagensDoMes.push(...data.data.data);
                 }
-                await new Promise(resolve => setTimeout(resolve, 50));
+                await new Promise(resolve => setTimeout(resolve, 150));
             }
             return mensagensDoMes;
         }
 
-        // FUNÇÃO ATUALIZADA COM A NOVA LÓGICA DE AUSÊNCIA
+        // FUNÇÃO CORRIGIDA
         function getMessageStatus(msgObject) {
-            // Passo 1: Coleta de dados essenciais
             const mensText = msgObject.mens || '';
             const recepcaoInfo = msgObject.timestamp || msgObject.recebimento;
             if (!mensText || !recepcaoInfo) return 'OK';
 
+            // 1. Obter a data/hora de recebimento
             const recepcaoDate = new Date((typeof recepcaoInfo === 'string' ? recepcaoInfo.replace(' ', 'T') + 'Z' : recepcaoInfo));
             if (isNaN(recepcaoDate.getTime())) return 'OK';
 
@@ -404,53 +405,48 @@
             
             if (!match) return 'OK';
 
+            // 2. Obter a data/hora da mensagem
             const msgDay = parseInt(match[1], 10);
             const msgHour = parseInt(match[2], 10);
             const msgMinute = parseInt(match[3], 10);
             
-            // Passo 2: Determinar a data de geração mais provável
             const recepcaoYear = recepcaoDate.getUTCFullYear();
-            const recepcaoMonth = recepcaoDate.getUTCMonth();
+            const recepcaoMonth = recepcaoDate.getUTCMonth(); 
 
-            const candidate1 = new Date(Date.UTC(recepcaoYear, recepcaoMonth, msgDay, msgHour, msgMinute));
-            const candidate2 = new Date(Date.UTC(recepcaoYear, recepcaoMonth - 1, msgDay, msgHour, msgMinute));
+            // Lógica para construir a data da mensagem, tratando virada de mês
+            const dateCurrentMonth = new Date(Date.UTC(recepcaoYear, recepcaoMonth, msgDay, msgHour, msgMinute));
+            const datePreviousMonth = new Date(Date.UTC(recepcaoYear, recepcaoMonth - 1, msgDay, msgHour, msgMinute));
+            const dateNextMonth = new Date(Date.UTC(recepcaoYear, recepcaoMonth + 1, msgDay, msgHour, msgMinute));
             
-            const diff1 = recepcaoDate.getTime() - candidate1.getTime();
-            const diff2 = recepcaoDate.getTime() - candidate2.getTime();
+            const diffCurrent = Math.abs(recepcaoDate.getTime() - dateCurrentMonth.getTime());
+            const diffPrevious = Math.abs(recepcaoDate.getTime() - datePreviousMonth.getTime());
+            const diffNext = Math.abs(recepcaoDate.getTime() - dateNextMonth.getTime());
 
-            let bestMsgDate;
-            if (diff1 >= 0 && diff2 >= 0) {
-                bestMsgDate = diff1 < diff2 ? candidate1 : candidate2;
-            } else if (diff1 >= 0) {
-                bestMsgDate = candidate1;
-            } else if (diff2 >= 0) {
-                bestMsgDate = candidate2;
-            } else {
-                return 'OK'; // Ambas as datas candidatas estão no futuro, ignora.
+            let bestMsgDate = dateCurrentMonth;
+            if (diffPrevious < diffCurrent && diffPrevious < diffNext) {
+                bestMsgDate = datePreviousMonth;
+            } else if (diffNext < diffCurrent && diffNext < diffPrevious) {
+                bestMsgDate = dateNextMonth;
             }
-
-            // Passo 3: Aplicar as regras de classificação (LÓGICA CORRIGIDA)
-            // 3.1: Regra de AUSÊNCIA - mais específica
-            const startOfMsgDay = new Date(bestMsgDate);
-            startOfMsgDay.setUTCHours(0, 0, 0, 0);
-
-            // Calcula o momento exato do "limite de ausência": 01:00Z do dia seguinte
-            const absentThreshold = new Date(startOfMsgDay);
-            absentThreshold.setUTCDate(startOfMsgDay.getUTCDate() + 1);
-            absentThreshold.setUTCHours(1, 0, 0, 0);
-
-            if (recepcaoDate.getTime() >= absentThreshold.getTime()) {
+            
+            // --- NOVA LÓGICA PARA MENSAGEM AUSENTE ---
+            // Normaliza as datas para comparar apenas o dia do calendário (ignorando as horas)
+            const msgCalendarDay = new Date(Date.UTC(bestMsgDate.getUTCFullYear(), bestMsgDate.getUTCMonth(), bestMsgDate.getUTCDate()));
+            const recepcaoCalendarDay = new Date(Date.UTC(recepcaoDate.getUTCFullYear(), recepcaoDate.getUTCMonth(), recepcaoDate.getUTCDate()));
+            
+            // Verifica se o recebimento ocorreu no dia seguinte E a partir de 01:00Z
+            if (recepcaoCalendarDay > msgCalendarDay && recepcaoDate.getUTCHours() >= 1) {
                 return 'ABSENT';
             }
-
-            // 3.2: Regra de ATRASO/INCONSISTÊNCIA
+            
+            // --- LÓGICA DE INCONSISTÊNCIA (executada apenas se não for ausente) ---
             const diffEmMinutos = (recepcaoDate.getTime() - bestMsgDate.getTime()) / (1000 * 60);
             const threshold = (tipo === 'METAR') ? 5 : 15;
+
             if (diffEmMinutos > threshold) {
                 return tipo === 'METAR' ? 'INCONSISTENT_METAR' : 'INCONSISTENT_SPECI';
             }
             
-            // 3.3: Se não for ausente nem atrasado, está OK
             return 'OK';
         }
         
@@ -498,6 +494,7 @@
             let tableStartY = 22;
 
             if (isFilteredInconsistent) {
+                // 1. Calcula as inconsistências por tipo para cada aeródromo
                 const inconsistenciasData = icaos.map(icao => {
                     const counts = { metar: 0, speci: 0, absent: 0 };
                     dadosFormatados
@@ -514,8 +511,10 @@
                     return { icao: icao, ...counts, total };
                 });
 
+                // 2. Ordena pelo total de inconsistências
                 inconsistenciasData.sort((a, b) => a.total - b.total);
                 
+                // 3. Prepara os dados para a tabela de resumo
                 const summaryHead = [['Aeródromo', 'METAR', 'SPECI', 'Ausente', 'Total']];
                 const summaryBody = inconsistenciasData.map(item => [
                     item.icao, 
@@ -525,6 +524,7 @@
                     item.total.toString()
                 ]);
                 
+                // 4. Gera a tabela de resumo com coloração baseada no total
                 doc.autoTable({
                     head: summaryHead,
                     body: summaryBody,
@@ -546,14 +546,13 @@
                 tableStartY = doc.lastAutoTable.finalY + 10;
             }
             
-            const mainTableColumn = ["Aeródromo", "Tipo", "Hora UTC Msg", "Data/Hora Recebimento"];
+            const mainTableColumn = ["Aeródromo", "Tipo", "Hora UTC Msg", "Data Recebimento", "Hora Recebimento"];
             if (isFilteredInconsistent) {
                 mainTableColumn.push("Mensagem");
             }
             
             const mainTableRows = dadosFormatados.map(d => {
-                const formattedTimestamp = d.timestamp.toLocaleString('pt-BR', { timeZone: 'UTC' }).replace(',', '');
-                const row = [d.icao, d.tipo, d.horaUTC, formattedTimestamp];
+                const row = [d.icao, d.tipo, d.horaUTC, d.timestamp.toLocaleDateString('pt-BR'), d.timestamp.toLocaleTimeString('pt-BR')];
                 if (isFilteredInconsistent) {
                     row.push(d.mens);
                 }
@@ -562,7 +561,7 @@
             
             const columnStyles = {};
             if (isFilteredInconsistent) {
-                columnStyles[4] = { cellWidth: 100 }; 
+                columnStyles[5] = { cellWidth: 100 }; 
             }
 
             doc.autoTable({
@@ -588,7 +587,7 @@
             const dadosFormatados = formatarDados(mensagens);
             const { filename } = gerarNomesArquivo(icaos, dateValue, type, 'csv');
 
-            const header = ["Aerodromo", "Tipo", "Hora_UTC_Msg", "Data_Hora_Recebimento", "Status_Inconsistencia", "Mensagem_Completa"];
+            const header = ["Aerodromo", "Tipo", "Hora_UTC_Msg", "Data_Recebimento", "Hora_Recebimento", "Status_Inconsistencia", "Mensagem_Completa"];
             
             const csvRows = [header.join(',')];
 
@@ -604,7 +603,8 @@
                     d.icao,
                     d.tipo,
                     d.horaUTC,
-                    escapeCSV(d.timestamp.toLocaleString('pt-BR', { timeZone: 'UTC' })),
+                    d.timestamp.toLocaleDateString('pt-BR'),
+                    d.timestamp.toLocaleTimeString('pt-BR'),
                     getMessageStatus(d),
                     escapeCSV(d.mens.trim())
                 ];
@@ -665,4 +665,3 @@
     </script>
 </body>
 </html>
-
