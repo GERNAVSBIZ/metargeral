@@ -4,101 +4,635 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Monitor METAR/SPECI</title>
+    <meta name="description" content="Painel de monitoramento em tempo real e alerta de atraso para mensagens meteorológicas METAR/SPECI - NAV Brasil.">
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap');
         @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap');
 
         :root {
-            --primary-color: #0f172a; --primary-light: #1e293b; --secondary-color: #3b82f6; --accent-color: #06b6d4; --background-color: #f8fafc; --background-gradient: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%); --text-color: #1e293b; --text-muted: #64748b; --card-background: rgba(255, 255, 255, 0.9); --card-border: rgba(255, 255, 255, 0.2); --panel-background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%); --panel-border: rgba(148, 163, 184, 0.2); --metar-display-bg: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%); --alert-color: #ef4444; --success-color: #10b981; --warning-color: #f59e0b; --border-radius: 16px; --border-radius-sm: 8px; --box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); --box-shadow-lg: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04); --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            /* Color Palette - SBIZ Aviation Theme */
+            --primary: #0b3c5d;
+            --primary-light: #1d5c8a;
+            --primary-dark: #07253b;
+            --accent: #ef5b25;
+            --accent-light: #ff7a45;
+            --accent-dark: #cc4210;
+            
+            --bg-dark: #0b0f19;
+            --bg-dark-card: rgba(18, 26, 47, 0.7);
+            
+            --text-dark: #f8fafc;
+            --text-dark-muted: #94a3b8;
+            
+            --border-dark: rgba(255, 255, 255, 0.08);
+            
+            --success: #10b981;
+            --error: #ef4444;
+            --warning: #f59e0b;
+            
+            --border-radius-sm: 8px;
+            --border-radius-md: 14px;
+            --border-radius-lg: 24px;
+            --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            --shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.3);
+
+            /* Theme variables */
+            --text-color: var(--text-dark-muted);
+            --text-muted: var(--text-dark-muted);
+            --alert-color: var(--error);
+            --success-color: var(--success);
+            --warning-color: var(--warning);
         }
-        body.dark-mode {
-            --primary-color: #f8fafc; --primary-light: #e2e8f0; --background-color: #0f172a; --background-gradient: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); --text-color: #cbd5e1; --text-muted: #94a3b8; --card-background: rgba(30, 41, 59, 0.8); --card-border: rgba(51, 65, 85, 0.5); --panel-background: linear-gradient(135deg, #1e293b 0%, #334155 100%); --panel-border: rgba(71, 85, 105, 0.5); --metar-display-bg: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+
+        /* Light Mode Variables Override */
+        body.light-mode {
+            --bg-dark: #f8fafc;
+            --bg-dark-card: rgba(255, 255, 255, 0.85);
+            --text-dark: #0f172a;
+            --text-dark-muted: #64748b;
+            --border-dark: rgba(15, 23, 42, 0.08);
+            --shadow: 0 10px 30px -10px rgba(15, 23, 42, 0.1);
         }
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: 'Inter', sans-serif; line-height: 1.6; color: var(--text-color); background: var(--background-gradient); padding: 24px; min-height: 100vh; transition: var(--transition); }
-        .card { background: var(--card-background); backdrop-filter: blur(10px); border-radius: var(--border-radius); padding: 24px; box-shadow: var(--box-shadow); border: 1px solid var(--card-border); transition: var(--transition); }
-        .status-panel { background: var(--panel-background); border: 1px solid var(--panel-border); }
-        .metar-display { background: var(--metar-display-bg); color: var(--primary-color); }
-        header { background: linear-gradient(135deg, var(--primary-color) 0%, var(--primary-light) 100%); color: white; padding: 32px; border-radius: var(--border-radius); margin-bottom: 32px; text-align: center; box-shadow: var(--box-shadow-lg); position: relative; overflow: hidden; }
-        header::before { content: ''; position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: linear-gradient(45deg, rgba(59, 130, 246, 0.1) 0%, rgba(6, 182, 212, 0.1) 100%); pointer-events: none; }
-        header h1 { margin-bottom: 8px; font-size: 2.5rem; font-weight: 700; letter-spacing: -0.025em; position: relative; z-index: 1; }
-        header h2 { font-size: 1.25rem; font-weight: 400; opacity: 0.9; position: relative; z-index: 1; }
-        .container { display: grid; grid-template-columns: 1fr; gap: 24px; max-width: 1400px; margin: 0 auto; }
-        @media (min-width: 768px) { .container { grid-template-columns: 2fr 1fr; } }
-        .card:hover { transform: translateY(-2px); box-shadow: var(--box-shadow-lg); }
-        .status-panel { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px; padding: 20px; border-radius: var(--border-radius-sm); }
-        .status-item { display: flex; align-items: center; gap: 12px; padding: 8px 0; }
-        .status-icon { width: 12px; height: 12px; border-radius: 50%; box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.3); transition: var(--transition); }
-        .status-normal { background: linear-gradient(135deg, var(--success-color) 0%, #059669 100%); box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2); }
-        .status-warning { background: linear-gradient(135deg, var(--warning-color) 0%, #d97706 100%); box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.2); }
-        .status-error { background: linear-gradient(135deg, var(--alert-color) 0%, #dc2626 100%); box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.2); }
-        .metar-display { padding: 24px; border-radius: var(--border-radius-sm); font-family: 'JetBrains Mono', monospace; white-space: pre-wrap; word-break: break-word; margin-bottom: 16px; min-height: 120px; border: 2px solid rgba(59, 130, 246, 0.1); font-size: 1.25rem; font-weight: 500; line-height: 1.8; transition: var(--transition); }
-        .metar-display:hover { border-color: rgba(59, 130, 246, 0.3); background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%); }
-        .metar-time { display: flex; align-items: center; justify-content: space-between; font-size: 0.875rem; color: var(--text-muted); margin-bottom: 24px; font-weight: 500; }
-        .alert-panel { background: linear-gradient(135deg, var(--alert-color) 0%, #dc2626 100%); color: white; padding: 20px; border-radius: var(--border-radius-sm); margin-bottom: 24px; display: flex; justify-content: space-between; align-items: center; box-shadow: var(--box-shadow); }
-        .alert-panel button { background: rgba(255, 255, 255, 0.9); color: var(--alert-color); border: none; padding: 10px 20px; border-radius: var(--border-radius-sm); cursor: pointer; font-weight: 600; transition: var(--transition); backdrop-filter: blur(10px); }
-        .alert-panel button:hover { background: white; transform: translateY(-1px); }
-        .history-panel h3, .settings-panel h3 { margin-bottom: 20px; font-size: 1.25rem; font-weight: 600; color: var(--primary-color); }
-        .history-item { padding: 16px; border-bottom: 1px solid var(--panel-border); transition: var(--transition); }
-        .history-item:last-child { border-bottom: none; }
-        .history-item:hover { background: rgba(59, 130, 246, 0.05); border-radius: var(--border-radius-sm); }
-        .history-metar { font-family: 'JetBrains Mono', monospace; white-space: pre-wrap; word-break: break-word; font-size: 0.875rem; color: var(--primary-color); margin-bottom: 8px; }
-        .history-time { font-size: 0.75rem; color: var(--text-muted); font-weight: 500; }
-        .settings-panel { margin-top: 24px; }
-        .settings-container { display: grid; grid-template-columns: 1fr; gap: 20px; }
-        .setting { display: flex; align-items: center; gap: 16px; padding: 16px; background: rgba(248, 250, 252, 0.8); border-radius: var(--border-radius-sm); border: 1px solid var(--panel-border); transition: var(--transition); }
-        body.dark-mode .setting { background: rgba(51, 65, 85, 0.5); }
-        .setting:hover { background: rgba(255, 255, 255, 0.9); border-color: rgba(59, 130, 246, 0.3); }
-        body.dark-mode .setting:hover { background: rgba(71, 85, 105, 0.7); }
-        .setting label { font-weight: 500; color: var(--text-color); min-width: 140px; }
-        .setting input[type="text"] { padding: 8px 12px; border: 2px solid rgba(148, 163, 184, 0.3); border-radius: var(--border-radius-sm); font-size: 1rem; font-weight: 500; transition: var(--transition); background: white; }
-        body.dark-mode .setting input[type="text"] { background: #334155; border-color: #475569; color: #f1f5f9; }
-        .setting input[type="text"]:focus { outline: none; border-color: var(--secondary-color); box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1); }
-        .setting button { padding: 8px 16px; background: linear-gradient(135deg, var(--secondary-color) 0%, #2563eb 100%); color: white; border: none; border-radius: var(--border-radius-sm); cursor: pointer; font-weight: 600; transition: var(--transition); }
-        .setting button:hover { transform: translateY(-1px); box-shadow: var(--box-shadow); }
-        footer { margin-top: 48px; text-align: center; color: var(--text-muted); font-size: 0.875rem; padding: 24px; background: var(--card-background); backdrop-filter: blur(10px); border-radius: var(--border-radius); border: 1px solid var(--card-border); }
-        footer a { color: var(--secondary-color); text-decoration: none; font-weight: 500; transition: var(--transition); }
-        footer a:hover { color: var(--accent-color); }
-        footer .developed-by { font-weight: 700; font-size: 1rem; margin-top: 12px; color: var(--primary-color); }
-        .no-history { color: var(--text-muted); font-style: italic; text-align: center; padding: 24px; }
-        .audio-unlock-prompt { position: fixed; top: 0; left: 0; width: 100%; background: linear-gradient(135deg, var(--warning-color) 0%, #d97706 100%); color: white; text-align: center; padding: 12px; z-index: 1000; font-weight: 600; box-shadow: var(--box-shadow); }
-        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.7; } 100% { opacity: 1; } }
-        .alert-active { animation: pulse 1.5s infinite; }
-        .flight-cat-vfr { background: linear-gradient(135deg, #dcfce7, #86efac); border: 2px solid #22c55e; }
-        .flight-cat-mvfr { background: linear-gradient(135deg, #dbeafe, #93c5fd); border: 2px solid #3b82f6; }
-        .flight-cat-ifr { background: linear-gradient(135deg, #fee2e2, #fca5a5); border: 2px solid #ef4444; }
-        .flight-cat-lifr { background: linear-gradient(135deg, #f3e8ff, #d8b4fe); border: 2px solid #a855f7; }
-        .flight-cat-unknown { background: var(--card-background); }
-        .flight-cat-vfr .metar-display, .flight-cat-mvfr .metar-display,
-        .flight-cat-ifr .metar-display, .flight-cat-lifr .metar-display { background: rgba(255, 255, 255, 0.6); }
-        body.dark-mode .flight-cat-vfr .metar-display, body.dark-mode .flight-cat-mvfr .metar-display,
-        body.dark-mode .flight-cat-ifr .metar-display, body.dark-mode .flight-cat-lifr .metar-display { background: rgba(255, 255, 255, 0.1); }
-        .metar-age-display { margin-left: auto; padding: 4px 8px; background: var(--panel-background); border-radius: var(--border-radius-sm); font-size: 0.8rem; font-weight: 700; color: var(--text-color); }
+        
+        * { 
+            box-sizing: border-box; 
+            margin: 0; 
+            padding: 0; 
+        }
+        
+        body { 
+            font-family: 'Inter', sans-serif; 
+            line-height: 1.6; 
+            color: var(--text-dark); 
+            background-color: var(--bg-dark);
+            min-height: 100vh;
+            padding: 24px 16px;
+            overflow-x: hidden;
+            position: relative;
+            transition: var(--transition);
+        }
+
+        /* Background Airport Decorative Circle Details */
+        body::before {
+            content: "";
+            position: fixed;
+            top: -10%;
+            right: -10%;
+            width: 50vw;
+            height: 50vw;
+            background: radial-gradient(circle, rgba(239, 91, 37, 0.08) 0%, rgba(0, 0, 0, 0) 70%);
+            z-index: -1;
+            pointer-events: none;
+        }
+
+        body::after {
+            content: "";
+            position: fixed;
+            bottom: -20%;
+            left: -10%;
+            width: 60vw;
+            height: 60vw;
+            background: radial-gradient(circle, rgba(11, 60, 93, 0.15) 0%, rgba(0, 0, 0, 0) 70%);
+            z-index: -1;
+            pointer-events: none;
+        }
+
+        h1, h2, h3, h4, h5, h6 {
+            font-family: 'Outfit', sans-serif;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+        }
+
+        /* Branding Area */
+        .brand {
+            text-align: center;
+            margin-bottom: 32px;
+            animation: fadeIn 0.5s ease-out;
+        }
+
+        .brand-icon-wrapper {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            background: rgba(239, 91, 37, 0.1);
+            border: 1.5px solid var(--accent);
+            color: var(--accent);
+            margin-bottom: 16px;
+            box-shadow: 0 0 15px rgba(239, 91, 37, 0.25);
+            animation: pulse-ring 2s infinite;
+        }
+
+        @keyframes pulse-ring {
+            0% { box-shadow: 0 0 0 0 rgba(239, 91, 37, 0.4); }
+            70% { box-shadow: 0 0 0 10px rgba(239, 91, 37, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(239, 91, 37, 0); }
+        }
+
+        .brand-title {
+            font-size: 24px;
+            color: var(--text-dark);
+            font-weight: 800;
+        }
+
+        .brand-subtitle {
+            font-size: 13px;
+            color: var(--text-dark-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            margin-top: 4px;
+        }
+
+        .container { 
+            display: grid; 
+            grid-template-columns: 1fr; 
+            gap: 24px; 
+            max-width: 1400px; 
+            margin: 0 auto; 
+        }
+
+        @media (min-width: 992px) { 
+            .container { 
+                grid-template-columns: 2fr 1fr; 
+            } 
+        }
+
+        .card { 
+            background: var(--bg-dark-card);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border-radius: var(--border-radius-lg); 
+            padding: 32px; 
+            box-shadow: var(--shadow);
+            border: 1px solid var(--border-dark); 
+            transition: var(--transition);
+            width: 100%;
+            margin-bottom: 24px;
+        }
+        
+        .card:hover { 
+            border-color: rgba(255, 255, 255, 0.15);
+            box-shadow: 0 15px 35px -5px rgba(0, 0, 0, 0.4);
+        }
+
+        /* Flight Category glowing border states */
+        .flight-cat-vfr {
+            border-color: rgba(16, 185, 129, 0.35) !important;
+            box-shadow: 0 0 25px rgba(16, 185, 129, 0.08), var(--shadow) !important;
+        }
+        .flight-cat-mvfr {
+            border-color: rgba(59, 130, 246, 0.35) !important;
+            box-shadow: 0 0 25px rgba(59, 130, 246, 0.08), var(--shadow) !important;
+        }
+        .flight-cat-ifr {
+            border-color: rgba(239, 68, 68, 0.35) !important;
+            box-shadow: 0 0 25px rgba(239, 68, 68, 0.1), var(--shadow) !important;
+        }
+        .flight-cat-lifr {
+            border-color: rgba(168, 85, 247, 0.35) !important;
+            box-shadow: 0 0 25px rgba(168, 85, 247, 0.1), var(--shadow) !important;
+        }
+        .flight-cat-unknown {
+            border-color: var(--border-dark) !important;
+        }
+
+        .section-title {
+            font-size: 15px;
+            color: var(--text-dark);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            border-left: 3px solid var(--accent);
+            padding-left: 10px;
+        }
+
+        /* Status Grid Dashboard */
+        .status-panel { 
+            background: rgba(255, 255, 255, 0.02); 
+            border: 1px solid var(--border-dark); 
+            border-radius: var(--border-radius-sm); 
+            display: grid; 
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); 
+            gap: 16px; 
+            margin-bottom: 28px; 
+            padding: 20px;
+        }
+
+        .status-item { 
+            display: flex; 
+            align-items: center; 
+            gap: 12px; 
+            font-size: 13.5px;
+            color: var(--text-dark-muted);
+        }
+
+        .status-item strong {
+            color: var(--text-dark);
+            font-weight: 600;
+        }
+
+        .status-icon { 
+            width: 12px; 
+            height: 12px; 
+            border-radius: 50%; 
+            transition: var(--transition); 
+        }
+
+        .status-normal { 
+            background: var(--success); 
+            box-shadow: 0 0 10px var(--success), 0 0 0 3px rgba(16, 185, 129, 0.2); 
+        }
+        
+        .status-warning { 
+            background: var(--warning); 
+            box-shadow: 0 0 10px var(--warning), 0 0 0 3px rgba(245, 158, 11, 0.2); 
+        }
+        
+        .status-error { 
+            background: var(--error); 
+            box-shadow: 0 0 10px var(--error), 0 0 0 3px rgba(239, 68, 68, 0.2); 
+        }
+
+        /* Flight Category badge styling */
+        .badge-category {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            border: 1px solid transparent;
+            transition: var(--transition);
+        }
+
+        .badge-category-vfr {
+            background: rgba(16, 185, 129, 0.15);
+            color: #34d399;
+            border-color: rgba(16, 185, 129, 0.3);
+            box-shadow: 0 0 10px rgba(16, 185, 129, 0.15);
+        }
+
+        .badge-category-mvfr {
+            background: rgba(59, 130, 246, 0.15);
+            color: #60a5fa;
+            border-color: rgba(59, 130, 246, 0.3);
+            box-shadow: 0 0 10px rgba(59, 130, 246, 0.15);
+        }
+
+        .badge-category-ifr {
+            background: rgba(239, 68, 68, 0.15);
+            color: #fca5a5;
+            border-color: rgba(239, 68, 68, 0.3);
+            box-shadow: 0 0 10px rgba(239, 68, 68, 0.15);
+        }
+
+        .badge-category-lifr {
+            background: rgba(168, 85, 247, 0.15);
+            color: #d8b4fe;
+            border-color: rgba(168, 85, 247, 0.3);
+            box-shadow: 0 0 10px rgba(168, 85, 247, 0.15);
+        }
+
+        .badge-category-unknown {
+            background: rgba(148, 163, 184, 0.15);
+            color: #cbd5e1;
+            border-color: rgba(148, 163, 184, 0.3);
+        }
+
+        /* METAR Display Block */
+        .metar-display { 
+            padding: 24px; 
+            border-radius: var(--border-radius-sm); 
+            font-family: 'JetBrains Mono', monospace; 
+            white-space: pre-wrap; 
+            word-break: break-word; 
+            margin-top: 12px;
+            margin-bottom: 16px; 
+            border: 1.5px solid var(--border-dark); 
+            font-size: 1.25rem; 
+            font-weight: 500; 
+            line-height: 1.8; 
+            background: rgba(0, 0, 0, 0.2) !important;
+            color: #ffffff !important;
+            transition: var(--transition); 
+        }
+        
+        .metar-display:hover { 
+            border-color: var(--accent); 
+            background: rgba(0, 0, 0, 0.3) !important; 
+        }
+
+        .metar-time { 
+            display: flex; 
+            align-items: center; 
+            justify-content: space-between; 
+            font-size: 13px; 
+            color: var(--text-dark-muted); 
+            margin-bottom: 12px; 
+            font-weight: 500; 
+        }
+
+        .metar-age-display { 
+            padding: 4px 10px; 
+            background: rgba(255, 255, 255, 0.05); 
+            border: 1px solid var(--border-dark);
+            border-radius: 20px; 
+            font-size: 11.5px; 
+            font-weight: 700; 
+            color: var(--accent-light); 
+        }
+
+        /* Alert Panel Crimson red gradient */
+        .alert-panel { 
+            background: linear-gradient(135deg, var(--error) 0%, #cc3333 100%) !important; 
+            color: white; 
+            padding: 16px 20px; 
+            border-radius: var(--border-radius-sm); 
+            margin-bottom: 28px; 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+            box-shadow: 0 4px 15px rgba(239, 68, 68, 0.4); 
+            font-weight: 700;
+            font-size: 14px;
+            letter-spacing: 0.02em;
+        }
+        
+        .alert-panel button { 
+            background: rgba(255, 255, 255, 0.15); 
+            color: white; 
+            border: 1.5px solid rgba(255, 255, 255, 0.4); 
+            padding: 8px 16px; 
+            border-radius: var(--border-radius-sm); 
+            cursor: pointer; 
+            font-weight: 700; 
+            transition: var(--transition); 
+            font-family: inherit;
+            outline: none;
+        }
+        
+        .alert-panel button:hover { 
+            background: white; 
+            color: var(--error); 
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+        }
+
+        .alert-active { 
+            animation: pulse-glow 1.5s infinite; 
+        }
+
+        @keyframes pulse-glow { 
+            0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.5); opacity: 1; } 
+            50% { box-shadow: 0 0 15px 5px rgba(239, 68, 68, 0.3); opacity: 0.95; } 
+            100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.5); opacity: 1; } 
+        }
+
+        /* Settings configuration fields */
+        .settings-panel h3 {
+            margin-bottom: 24px;
+        }
+
+        .settings-container { 
+            display: grid; 
+            grid-template-columns: 1fr; 
+            gap: 20px; 
+        }
+
+        .setting { 
+            display: flex; 
+            align-items: center; 
+            gap: 16px; 
+            padding: 16px; 
+            background: rgba(255, 255, 255, 0.02) !important; 
+            border-radius: var(--border-radius-sm); 
+            border: 1px solid var(--border-dark) !important; 
+            transition: var(--transition); 
+        }
+        
+        .setting:hover { 
+            background: rgba(255, 255, 255, 0.04) !important; 
+            border-color: rgba(255, 255, 255, 0.15) !important; 
+        }
+        
+        .setting label { 
+            font-size: 13px;
+            font-weight: 600; 
+            color: var(--text-dark-muted); 
+            min-width: 140px; 
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .setting input[type="text"] { 
+            padding: 10px 14px; 
+            border: 1.5px solid var(--border-dark); 
+            border-radius: var(--border-radius-sm); 
+            font-size: 14px; 
+            font-weight: 500; 
+            transition: var(--transition); 
+            background: rgba(255, 255, 255, 0.03); 
+            color: var(--text-dark);
+            outline: none;
+        }
+
+        .setting input[type="text"]:focus { 
+            border-color: var(--accent); 
+            background: rgba(255, 255, 255, 0.06);
+            box-shadow: 0 0 0 3px rgba(239, 91, 37, 0.15);
+        }
+
+        .setting button { 
+            padding: 10px 18px; 
+            background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%); 
+            color: white; 
+            border: none; 
+            border-radius: var(--border-radius-sm); 
+            cursor: pointer; 
+            font-weight: 700; 
+            transition: var(--transition); 
+        }
+        
+        .setting button:hover { 
+            transform: translateY(-2px); 
+            box-shadow: 0 4px 12px rgba(239, 91, 37, 0.25);
+        }
+
+        input[type="range"] {
+            accent-color: var(--accent);
+            cursor: pointer;
+            height: 6px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 3px;
+            outline: none;
+        }
+
+        input[type="checkbox"] {
+            accent-color: var(--accent);
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
+
+        /* Sidebar - History */
+        .history-panel h3 { 
+            margin-bottom: 24px; 
+            font-size: 15px; 
+            font-weight: 700; 
+            color: var(--text-dark); 
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            border-left: 3px solid var(--accent);
+            padding-left: 10px;
+        }
+
+        .history-item { 
+            padding: 16px; 
+            border-bottom: 1px solid var(--border-dark); 
+            transition: var(--transition); 
+        }
+        
+        .history-item:last-child { 
+            border-bottom: none; 
+        }
+        
+        .history-item:hover { 
+            background: rgba(255, 255, 255, 0.02); 
+            border-radius: var(--border-radius-sm); 
+        }
+        
+        .history-metar { 
+            font-family: 'JetBrains Mono', monospace; 
+            white-space: pre-wrap; 
+            word-break: break-word; 
+            font-size: 13.5px; 
+            color: var(--text-dark); 
+            margin-bottom: 8px; 
+            line-height: 1.6;
+        }
+        
+        .history-metar strong {
+            color: var(--accent-light);
+            font-weight: 700;
+        }
+        
+        .history-time { 
+            font-size: 11.5px; 
+            color: var(--text-dark-muted); 
+            font-weight: 500; 
+        }
+
+        .no-history { 
+            color: var(--text-dark-muted); 
+            font-style: italic; 
+            text-align: center; 
+            padding: 24px; 
+            font-size: 14px;
+        }
+
+        .audio-unlock-prompt { 
+            position: fixed; 
+            top: 0; 
+            left: 0; 
+            width: 100%; 
+            background: linear-gradient(135deg, var(--warning) 0%, #d97706 100%); 
+            color: white; 
+            text-align: center; 
+            padding: 12px; 
+            z-index: 1000; 
+            font-weight: 700; 
+            font-size: 14px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.2); 
+            letter-spacing: 0.02em;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        footer { 
+            margin-top: 36px; 
+            text-align: center; 
+            color: var(--text-dark-muted); 
+            font-size: 12.5px; 
+            padding: 24px; 
+            background: var(--bg-dark-card); 
+            backdrop-filter: blur(16px); 
+            border-radius: var(--border-radius-lg); 
+            border: 1px solid var(--border-dark); 
+            box-shadow: var(--shadow);
+        }
+        
+        footer a { 
+            color: var(--accent-light); 
+            text-decoration: none; 
+            font-weight: 600; 
+            transition: var(--transition); 
+        }
+        
+        footer a:hover { 
+            color: var(--accent); 
+        }
+        
+        footer .developed-by { 
+            font-weight: 700; 
+            font-size: 13.5px; 
+            margin-top: 12px; 
+            color: var(--text-dark); 
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
     </style>
 </head>
-<body class="">
+<body class="dark-mode">
     <div id="audioUnlockPrompt" class="audio-unlock-prompt">Clique em qualquer lugar da página para habilitar o som do alarme.</div>
-    <header>
-        <h1>Monitor METAR/SPECI</h1>
-        <h2 id="aerodromoHeader">Aeroporto de SBIZ</h2>
-    </header>
+    
+    <!-- Branding Header -->
+    <div class="brand">
+        <div class="brand-icon-wrapper">
+            <!-- SVG Plane -->
+            <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="transform: rotate(45deg);"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-1 .1-1.3.5l-.3.3c-.4.4-.4 1.1 0 1.5L9 12l-4 4H3l-1 1 3 2 2 3 1-1v-2l4-4 3.8 5.8c.4.4 1.1.4 1.5 0l.3-.3c.4-.3.6-.8.5-1.3Z"/></svg>
+        </div>
+        <h1 class="brand-title">NAVMANAGER</h1>
+        <p class="brand-subtitle" id="aerodromoHeader">Monitor METAR/SPECI - Aeroporto de SBIZ</p>
+    </div>
     
     <div class="container">
         <div class="main-content">
             <div id="main-metar-card" class="card">
+                <!-- Status Grid Dashboard -->
                 <div class="status-panel">
-                    <div class="status-item"><div id="statusIcon" class="status-icon status-normal"></div><span>Status: <strong id="statusValue">Iniciando...</strong></span></div>
-                    <div class="status-item"><span>Última verificação: <strong id="lastCheckTime">--:--:--</strong></span></div>
-                    <div class="status-item"><span>Próxima verificação: <strong id="nextCheckTime">--:--:--</strong></span></div>
-                    <div class="status-item"><span>Tempo para próxima hora: <strong id="countdown">--:--</strong></span></div>
+                    <div class="status-item">
+                        <div id="statusIcon" class="status-icon status-normal"></div>
+                        <span>Status: <strong id="statusValue">Iniciando...</strong></span>
+                    </div>
+                    <div class="status-item">
+                        <span>Última verificação: <strong id="lastCheckTime">--:--:--</strong></span>
+                    </div>
+                    <div class="status-item">
+                        <span>Próxima verificação: <strong id="nextCheckTime">--:--:--</strong></span>
+                    </div>
+                    <div class="status-item">
+                        <span>Tempo para próxima hora: <strong id="countdown">--:--</strong></span>
+                    </div>
                 </div>
                 
+                <!-- Delay Alert Panel -->
                 <div id="alertPanel" class="alert-panel" style="display: none;">
                     <div id="alertMessage">ALERTA: METAR/SPECI DA HORA NÃO ENCONTRADO!</div>
                     <button id="silenceButton">Silenciar</button>
                 </div>
 
-                <h3>ÚLTIMO METAR/SPECI RECEBIDO</h3>
+                <!-- Last METAR Header with Flight Category Badge -->
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 12px; margin-bottom: 12px;">
+                    <h3 class="section-title" style="margin-bottom: 0;">Último METAR/SPECI Recebido</h3>
+                    <span id="flightCategoryBadge" class="badge-category badge-category-unknown">S/ DADOS</span>
+                </div>
+                
                 <div id="metarRaw" class="metar-display">Aguardando dados...</div>
                 <div id="metarTime" class="metar-time">
                     <span id="metarTimestamp"></span>
@@ -106,30 +640,32 @@
                 </div>
             </div>
             
+            <!-- Settings Card -->
             <div class="card settings-panel">
-                <h3>Configurações</h3>
-                <div class="settings-container">
+                <h3 class="section-title">Configurações do Monitor</h3>
+                <div class="settings-container" style="margin-top: 20px;">
                     <div class="setting">
-                        <label for="aerodromoInput">Código ICAO:</label>
-                        <input type="text" id="aerodromoInput" value="SBIZ" maxlength="4" style="text-transform: uppercase; width: 80px;">
-                        <button id="alterarAerodromo">Alterar</button>
+                        <label for="aerodromoInput">Código ICAO</label>
+                        <input type="text" id="aerodromoInput" value="SBIZ" maxlength="4" style="text-transform: uppercase; width: 90px; text-align: center;">
+                        <button id="alterarAerodromo" style="margin-left: 10px;">Alterar</button>
                     </div>
                     <div class="setting">
-                        <label for="volumeControl">Volume do Alarme:</label>
-                        <input type="range" id="volumeControl" min="0" max="1" step="0.1" value="0.7">
+                        <label for="volumeControl">Volume do Alarme</label>
+                        <input type="range" id="volumeControl" min="0" max="1" step="0.1" value="0.7" style="flex-grow: 1;">
                     </div>
                     <div class="setting">
-                        <label for="autoRefresh">Atualização Automática:</label>
+                        <label for="autoRefresh">Atualização Automática</label>
                         <input type="checkbox" id="autoRefresh" checked>
                     </div>
                     <div class="setting">
-                        <label for="darkModeToggle">Tema Escuro:</label>
-                        <button id="darkModeToggle" style="background: var(--panel-background); border: 1px solid var(--panel-border); border-radius: 50%; width: 40px; height: 40px; font-size: 1.5rem; cursor: pointer; display: flex; align-items: center; justify-content: center;">🌙</button>
+                        <label for="darkModeToggle">Alternar Tema</label>
+                        <button id="darkModeToggle" style="background: rgba(255,255,255,0.05); border: 1.5px solid var(--border-dark); border-radius: 50%; width: 40px; height: 40px; font-size: 1.25rem; cursor: pointer; display: flex; align-items: center; justify-content: center; outline: none; transition: var(--transition);">☀️</button>
                     </div>
                 </div>
             </div>
         </div>
         
+        <!-- Sidebar - History -->
         <div class="sidebar">
             <div class="card history-panel">
                 <h3>Histórico de Mensagens</h3>
@@ -139,8 +675,8 @@
     </div>
 
     <footer>
-        <p id="footerText">Desenvolvido para monitoramento de METAR/SPECI - SBIZ - 2025</p>
-        <p>Dados fornecidos pela <a href="https://redemet.decea.mil.br/" target="_blank">REDEMET</a></p>
+        <p id="footerText">Monitoramento METAR/SPECI - SBIZ - 2025</p>
+        <p style="margin-top: 4px;">Dados fornecidos em tempo real pela <a href="https://redemet.decea.mil.br/" target="_blank">REDEMET</a></p>
         <p class="developed-by">Desenvolvido pela DNIZ</p>
     </footer>
 
@@ -155,7 +691,7 @@
             volumeAlarme: 0.7,
             maxHistorico: 10
         };
-
+ 
         const elements = {
             statusValue: document.getElementById('statusValue'), statusIcon: document.getElementById('statusIcon'), lastCheckTime: document.getElementById('lastCheckTime'), nextCheckTime: document.getElementById('nextCheckTime'), countdown: document.getElementById('countdown'), metarRaw: document.getElementById('metarRaw'), metarTime: document.getElementById('metarTime'), alertPanel: document.getElementById('alertPanel'), alertMessage: document.getElementById('alertMessage'), silenceButton: document.getElementById('silenceButton'), historyContainer: document.getElementById('historyContainer'), volumeControl: document.getElementById('volumeControl'), autoRefresh: document.getElementById('autoRefresh'), alertSound: document.getElementById('alertSound'), aerodromoInput: document.getElementById('aerodromoInput'), alterarAerodromo: document.getElementById('alterarAerodromo'), aerodromoHeader: document.getElementById('aerodromoHeader'), footerText: document.getElementById('footerText'), audioUnlockPrompt: document.getElementById('audioUnlockPrompt'),
             darkModeToggle: document.getElementById('darkModeToggle'), metarTimestamp: document.getElementById('metarTimestamp'), metarAge: document.getElementById('metarAge')
@@ -168,12 +704,17 @@
         function getFlightCategory(metarString) {
             if (!metarString || metarString.includes('Aguardando')) return 'unknown';
             if (metarString.includes('CAVOK')) return 'vfr';
+            
+            // CORREÇÃO: Remove a restrição !== '0000' para que o nevoeiro denso (0000 metros) seja corretamente classificado como LIFR
             const visMatch = metarString.match(/\s(\d{4})\s/);
             let visibility = 9999;
-            if (visMatch && visMatch[1] !== '0000') visibility = parseInt(visMatch[1], 10);
-            const ceilingMatch = metarString.match(/\s(BKN|OVC)(\d{3})/);
+            if (visMatch) visibility = parseInt(visMatch[1], 10);
+            
+            // CORREÇÃO: Adicionado reconhecimento de teto por visibilidade vertical 'VV' (ex: VV002)
+            const ceilingMatch = metarString.match(/\s(BKN|OVC|VV)(\d{3})/);
             let ceiling = 9999;
             if (ceilingMatch) ceiling = parseInt(ceilingMatch[2], 10) * 100;
+            
             if (visibility < 1600 || ceiling < 500) return 'lifr';
             if (visibility < 4800 || ceiling < 1000) return 'ifr';
             if (visibility < 8000 || ceiling < 3000) return 'mvfr';
@@ -194,13 +735,13 @@
         }
 
         function toggleDarkMode() {
-            document.body.classList.toggle('dark-mode');
-            if (document.body.classList.contains('dark-mode')) {
-                localStorage.setItem('darkMode', 'enabled');
-                elements.darkModeToggle.textContent = '☀️';
-            } else {
+            document.body.classList.toggle('light-mode');
+            if (document.body.classList.contains('light-mode')) {
                 localStorage.setItem('darkMode', 'disabled');
                 elements.darkModeToggle.textContent = '🌙';
+            } else {
+                localStorage.setItem('darkMode', 'enabled');
+                elements.darkModeToggle.textContent = '☀️';
             }
         }
 
@@ -226,11 +767,19 @@
             elements.aerodromoInput.addEventListener('keypress', e => { if (e.key === 'Enter') alterarAerodromo(); });
             elements.darkModeToggle.addEventListener('click', toggleDarkMode);
             document.addEventListener('click', unlockAudio);
+            
             carregarPreferencias();
-            if (localStorage.getItem('darkMode') === 'enabled') {
-                document.body.classList.add('dark-mode');
+            
+            // Default para dark mode out-of-the-box
+            const dm = localStorage.getItem('darkMode');
+            if (dm === 'disabled') {
+                document.body.classList.add('light-mode');
+                elements.darkModeToggle.textContent = '🌙';
+            } else {
+                document.body.classList.remove('light-mode');
                 elements.darkModeToggle.textContent = '☀️';
             }
+            
             state.ultimaHoraVerificada = new Date().getUTCHours();
             consultarMetar();
             state.intervalId = setInterval(consultarMetar, CONFIG.intervaloConsulta);
@@ -274,8 +823,18 @@
                     state.ultimoMetarCompleto = metarCompletoMaisRecente;
                     elements.metarRaw.textContent = metarCompletoMaisRecente;
                     const flightCategory = getFlightCategory(metarCompletoMaisRecente);
-                    document.getElementById('main-metar-card').className = 'card';
-                    document.getElementById('main-metar-card').classList.add(`flight-cat-${flightCategory}`);
+                    
+                    // Atualiza a classe de categoria de voo no card para efeitos de borda brilhante
+                    const mainMetarCard = document.getElementById('main-metar-card');
+                    mainMetarCard.className = 'card flight-cat-' + flightCategory;
+                    
+                    // Atualiza o texto e estilo do Badge de Categoria de Voo
+                    const badge = document.getElementById('flightCategoryBadge');
+                    if (badge) {
+                        badge.className = 'badge-category badge-category-' + flightCategory;
+                        badge.textContent = flightCategory === 'unknown' ? 'S/ DADOS' : flightCategory;
+                    }
+                    
                     calculateMetarAge();
                     const regexMetarInfo = new RegExp(`(METAR|SPECI)\\s+(${CONFIG.localidade})\\s+(\\d{2})(\\d{2})(\\d{2})Z`);
                     const match = metarCompletoMaisRecente.match(regexMetarInfo);
@@ -319,9 +878,9 @@
         }
 
         function atualizarTituloAerodromo() {
-            const novoTitulo = `Aeroporto de ${CONFIG.localidade}`;
+            const novoTitulo = `Monitor METAR/SPECI - Aeroporto de ${CONFIG.localidade}`;
             elements.aerodromoHeader.textContent = novoTitulo;
-            elements.footerText.textContent = `Monitoramento METAR/SPECI - ${CONFIG.localidade} - 2025`;
+            elements.footerText.textContent = `Monitoramento METAR/SPECI - ${CONFIG.localidade} - 2026`;
             document.title = `Monitor METAR - ${CONFIG.localidade}`;
         }
 
@@ -383,7 +942,7 @@
                 state.historicoMetar = state.historicoMetar.slice(0, CONFIG.maxHistorico);
             }
             if (state.historicoMetar.length === 0) {
-                elements.historyContainer.innerHTML = '<p class="no-history">Nenhum histórico</p>'; return;
+                elements.historyContainer.innerHTML = '<p class="no-history">Nenhum histórico disponível</p>'; return;
             }
             let html = '';
             state.historicoMetar.forEach(item => {
@@ -394,14 +953,17 @@
             elements.historyContainer.innerHTML = html;
         }
 
+        // CORREÇÃO: Robustez na virada de hora cheia, prevenindo que o timer pule o reset
         function verificarHoraCheia() {
             const agora = new Date();
             const minutos = agora.getUTCMinutes();
             const segundos = agora.getUTCSeconds();
             const horaAtual = agora.getUTCHours();
-            if (minutos === 0 && segundos === 0 && state.ultimaHoraVerificada !== horaAtual) {
+            
+            if (state.ultimaHoraVerificada !== horaAtual) {
                 console.log(`Nova hora UTC: ${horaAtual}Z. Resetando status.`);
-                state.metarHoraAtualEncontrado = false; state.alarmeSilenciado = false;
+                state.metarHoraAtualEncontrado = false; 
+                state.alarmeSilenciado = false;
                 state.ultimaHoraVerificada = horaAtual;
                 desativarAlerta();
             }
@@ -436,6 +998,3 @@
     </script>
 </body>
 </html>
-
-
-
