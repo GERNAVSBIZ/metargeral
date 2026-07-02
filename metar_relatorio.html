@@ -522,6 +522,9 @@
                     <label class="checkbox-label">
                         <input type="checkbox" id="filterHorarioCor"> Ignorar mensagens corrigidas (COR)
                     </label>
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="filterStrictEndHour"> Limitar estritamente ao minuto zero da hora final (ex: até 03:00 exatas)
+                    </label>
                 </div>
 
                 <!-- Inputs & Controls -->
@@ -600,6 +603,7 @@
             horarioEndHour: document.getElementById('horarioEndHour'),
             filterHorarioInconsistent: document.getElementById('filterHorarioInconsistent'),
             filterHorarioCor: document.getElementById('filterHorarioCor'),
+            filterStrictEndHour: document.getElementById('filterStrictEndHour'),
             generateHorarioReportBtn: document.getElementById('generateHorarioReportBtn')
         };
 
@@ -899,12 +903,24 @@
                     if (!match) return false;
 
                     const msgHour = parseInt(match[2], 10);
+                    const msgMinute = parseInt(match[3], 10);
+                    
+                    let matchesTime = false;
                     if (startHour <= endHour) {
-                        return (msgHour >= startHour && msgHour <= endHour);
+                        matchesTime = (msgHour >= startHour && msgHour <= endHour);
                     } else {
                         // Cruza meia-noite (ex: 23h às 01h)
-                        return (msgHour >= startHour || msgHour <= endHour);
+                        matchesTime = (msgHour >= startHour || msgHour <= endHour);
                     }
+
+                    // Se a correspondência for verdadeira e o checkbox de limite estrito estiver marcado
+                    if (matchesTime && elements.filterStrictEndHour.checked) {
+                        if (msgHour === endHour && msgMinute > 0) {
+                            return false;
+                        }
+                    }
+
+                    return matchesTime;
                 });
 
                 // Filtra por inconsistência se o checkbox estiver marcado
@@ -915,7 +931,8 @@
                 if (dadosParaRelatorio.length > 0) {
                     const startStr = startHour.toString().padStart(2, '0') + 'h';
                     const endStr = endHour.toString().padStart(2, '0') + 'h';
-                    showStatus(`Total de ${dadosParaRelatorio.length} mensagens encontradas no intervalo ${startStr}-${endStr}. Gerando PDF...`, 'success');
+                    const strictText = elements.filterStrictEndHour.checked ? ' (estrito)' : '';
+                    showStatus(`Total de ${dadosParaRelatorio.length} mensagens encontradas no intervalo ${startStr}-${endStr}${strictText}. Gerando PDF...`, 'success');
                     gerarPDFHistoricoPorHorario(dadosParaRelatorio, icao, monthValue, startHour, endHour);
                 } else {
                     const monthName = new Date(year, month - 1, 1).toLocaleString('pt-BR', { month: 'long' });
@@ -1097,11 +1114,12 @@
             const startStr = startHour.toString().padStart(2, '0') + ':00Z';
             const endStr = endHour.toString().padStart(2, '0') + ':00Z';
             
+            const strictSuffix = elements.filterStrictEndHour.checked ? ' - Estrito' : '';
             const title = isFiltered 
-                ? `Relatório de Inconsistências (${startStr} a ${endStr}) - ${icao} - ${formattedMonth}/${year}` 
-                : `Relatório Mensal (${startStr} a ${endStr}) - ${icao} - ${formattedMonth}/${year}`;
+                ? `Relatório de Inconsistências (${startStr} a ${endStr}${strictSuffix}) - ${icao} - ${formattedMonth}/${year}` 
+                : `Relatório Mensal (${startStr} a ${endStr}${strictSuffix}) - ${icao} - ${formattedMonth}/${year}`;
                 
-            const filename = `relatorio_${isFiltered ? 'inconsistencias' : 'mensal'}_horario_${icao}_${monthValue}_${startHour}h-${endHour}h.pdf`;
+            const filename = `relatorio_${isFiltered ? 'inconsistencias' : 'mensal'}_horario_${icao}_${monthValue}_${startHour}h-${endHour}h${elements.filterStrictEndHour.checked ? '_estrito' : ''}.pdf`;
             
             doc.text(title, 14, 15);
 
